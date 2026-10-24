@@ -8,16 +8,19 @@ The Anthropic API key never leaves this server.
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import APIRouter, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .tools import TOOLS
 
+# The repo-root .env is shared with agent_service; agent/.env still works.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv()
 log = logging.getLogger("orbit.agent")
 
@@ -41,8 +44,8 @@ Tone:
 
 client = anthropic.Anthropic()
 
-app = FastAPI(title="Orbit agent service")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["POST", "GET"], allow_headers=["*"])
+# agent_service.main serves these routes too, next to the ingest endpoints.
+router = APIRouter()
 
 
 class ChatRequest(BaseModel):
@@ -56,12 +59,12 @@ class ChatResponse(BaseModel):
     stop_reason: str | None
 
 
-@app.get("/health")
+@router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/agent/chat", response_model=ChatResponse)
+@router.post("/agent/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, x_orbit_key: str | None = Header(default=None)) -> ChatResponse:
     secret = os.getenv("ORBIT_SHARED_SECRET")
     if secret and x_orbit_key != secret:
@@ -103,3 +106,8 @@ def chat(req: ChatRequest, x_orbit_key: str | None = Header(default=None)) -> Ch
         content=[block.to_dict() for block in response.content],
         stop_reason=response.stop_reason,
     )
+
+
+app = FastAPI(title="Orbit agent service")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["POST", "GET"], allow_headers=["*"])
+app.include_router(router)

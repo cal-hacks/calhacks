@@ -1,14 +1,26 @@
 [project]
 name = "orbit-agent"
 version = "0.1.0"
-description = "Orbit agent service: goal-coach chat endpoint backed by Claude"
-requires-python = ">=3.11"
+description = "Orbit agent service: goal-coach chat, friend agents, coordinator, ingest"
+requires-python = ">=3.12"
 dependencies = [
     "anthropic>=1.0",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "httpx>=0.28",
     "python-dotenv>=1.0",
+    "uagents>=0.26.1",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
 ]
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
