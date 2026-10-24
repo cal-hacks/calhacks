@@ -1,10 +1,13 @@
+import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useDB } from "../lib/db";
 import { currentUser } from "../lib/api";
+import { connectAs, syncGoals, syncProfile, useLive } from "../lib/live";
 import { APP_NAME } from "../lib/meta";
 import { Avatar } from "./Avatar";
 
 const NAV = [
+  { to: "/group", label: "Group", icon: "💬" },
   { to: "/", label: "Dashboard", icon: "📊", end: true },
   { to: "/goals", label: "Goals", icon: "🎯" },
   { to: "/friends", label: "Friends", icon: "🫂" },
@@ -15,6 +18,19 @@ export function Layout() {
   const db = useDB();
   const me = currentUser(db);
   const pending = me ? db.connections.filter((c) => c.toId === me.id && c.status === "pending").length : 0;
+  const live = useLive();
+
+  // Join the live group as this account, then push what friends should see.
+  useEffect(() => {
+    if (me) connectAs(me);
+  }, [me?.id]);
+  useEffect(() => {
+    if (!me || live.status !== "ready") return;
+    syncProfile(me);
+    syncGoals(me.id, db.goals, db.logs);
+    // Once per connection; later changes are pushed by api.ts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.status, me?.id]);
 
   return (
     <div className="shell">
