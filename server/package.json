@@ -1,0 +1,16 @@
+{
+  "name": "calhacks-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "spacetimedb": "2.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}
