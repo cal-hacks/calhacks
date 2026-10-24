@@ -2,6 +2,7 @@ import { getDB, mutate, newId } from "./db";
 import { hashPassword, randomSalt } from "./hash";
 import { defaultPermissions, defaultSharing, sampleGoalsFor } from "./seed";
 import { today } from "./dates";
+import * as live from "./live";
 import type {
   CalendarProvider,
   Connection,
@@ -91,7 +92,8 @@ export function signUp(input: { username: string; password: string; displayName:
 
 export function logIn(usernameRaw: string, password: string): User {
   const username = usernameRaw.trim().toLowerCase();
-  const user = getDB().users.find((u) => u.username === username && !u.isSeed);
+  // Seeded people with a password are the demo phones (maya_runs, jordanp, sam_l).
+  const user = getDB().users.find((u) => u.username === username && (!u.isSeed || u.passwordHash));
   if (!user || !user.salt || user.passwordHash !== hashPassword(password, user.salt)) {
     throw new ApiError(user && !user.passwordHash ? `This account uses ${user.authProvider === "apple" ? "Apple" : "Google"} sign-in.` : "Wrong username or password.");
   }
@@ -171,6 +173,7 @@ export function signInWithApple(profile: AppleProfile): { user: User; isNew: boo
 }
 
 export function logOut() {
+  live.disconnect();
   mutate((db) => ({ ...db, session: { userId: null } }));
 }
 
@@ -179,6 +182,12 @@ function requireUser(): User {
   const user = db.users.find((u) => u.id === db.session.userId);
   if (!user) throw new ApiError("You're signed out.");
   return user;
+}
+
+/** Push shared goals and this period's progress to the live group. */
+function pushGoals() {
+  const db = getDB();
+  if (db.session.userId) live.syncGoals(db.session.userId, db.goals, db.logs);
 }
 
 function patchUser(id: Id, patch: Partial<User>) {
@@ -191,6 +200,7 @@ export function completeOnboarding() {
 
 export function updateProfile(patch: Partial<Pick<User, "displayName" | "bio" | "city" | "timezone" | "avatar" | "profileVisibility" | "email" | "phone">>) {
   patchUser(requireUser().id, patch);
+  live.syncProfile(requireUser());
 }
 
 export function changePassword(current: string, next: string) {
@@ -216,6 +226,7 @@ export function deleteAccount() {
     chats: db.chats?.filter((c) => c.userId !== id),
     session: { userId: null },
   }));
+  live.disconnect();
 }
 
 // ---------- permissions (set_consent) ----------
@@ -226,6 +237,7 @@ export function setPermissions(patch: Partial<Omit<Permissions, "userId" | "cale
     ...db,
     permissions: db.permissions.map((p) => (p.userId === id ? { ...p, ...patch } : p)),
   }));
+  live.syncConsent(permissionsOf(getDB(), id));
 }
 
 export function setCalendar(provider: CalendarProvider, connected: boolean, account?: string) {
@@ -244,6 +256,7 @@ export function setCalendar(provider: CalendarProvider, connected: boolean, acco
         : p,
     ),
   }));
+  live.syncConsent(permissionsOf(getDB(), id));
 }
 
 // ---------- connections ----------
@@ -304,6 +317,7 @@ export function setSharing(friendId: Id, patch: Partial<Omit<SharingPrefs, "owne
       sharing: [...db.sharing.filter((s) => !(s.ownerId === me && s.friendId === friendId)), next],
     };
   });
+  if (patch.roastOk !== undefined) live.syncRoastOk(me, getDB().sharing);
 }
 
 /** Apply the same prefs to every friend (the "apply to all" shortcut). */
@@ -355,11 +369,13 @@ export function createGoal(input: Omit<Goal, "id" | "userId" | "archived" | "cre
   if (!(input.target > 0)) throw new ApiError("Target must be more than zero.");
   const goal: Goal = { ...input, id: newId("g"), userId: me, archived: false, createdAt: Date.now() };
   mutate((db) => ({ ...db, goals: [...db.goals, goal] }));
+  pushGoals();
   return goal;
 }
 
 export function updateGoal(id: Id, patch: Partial<Goal>) {
   mutate((db) => ({ ...db, goals: db.goals.map((g) => (g.id === id ? { ...g, ...patch } : g)) }));
+  pushGoals();
 }
 
 export function deleteGoal(id: Id) {
@@ -368,6 +384,7 @@ export function deleteGoal(id: Id) {
     goals: db.goals.filter((g) => g.id !== id),
     logs: db.logs.filter((l) => l.goalId !== id),
   }));
+  pushGoals();
 }
 
 export function logProgress(goalId: Id, amount: number, date = today(), note?: string): GoalLog {
@@ -377,6 +394,7 @@ export function logProgress(goalId: Id, amount: number, date = today(), note?: s
   if (!(amount > 0)) throw new ApiError("Enter an amount above zero.");
   const entry: GoalLog = { id: newId("l"), goalId, userId: me, amount, date, source: "manual", note, createdAt: Date.now() };
   mutate((db) => ({ ...db, logs: [...db.logs, entry] }));
+  pushGoals();
   return entry;
 }
 
@@ -401,6 +419,7 @@ export function loadSampleData() {
     goals: [...db.goals.filter((g) => !goals.some((s) => s.id === g.id)), ...goals],
     logs: [...db.logs.filter((l) => !logs.some((s) => s.id === l.id)), ...logs],
   }));
+  pushGoals();
 }
 
 // ---------- selectors ----------

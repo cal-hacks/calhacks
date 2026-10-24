@@ -9,7 +9,7 @@ For college friends who moved to different cities after graduating. Each friend 
 | Folder | What | Stack |
 |---|---|---|
 | `web/` | The app: group chat, goals, dashboard, friends, consent | React + Vite |
-| `mobile/` | Native iOS app with the same screens and Apple Screen Time (not wired to the live group yet) | Expo |
+| `mobile/` | The iPhone app: same screens plus the live group, Share and calendar busy-time sync; runs in Expo Go | Expo / React Native |
 | `server/` | Shared world state: tables, rules and per-person views | SpacetimeDB module (TypeScript) |
 | `agent/` | Goal-coach chat, friend agents, coordinator, chat watcher | Python, Claude, Fetch.ai uAgents |
 

@@ -5,7 +5,6 @@ import * as Contacts from "expo-contacts";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { GoogleSignin, isSuccessResponse } from "@react-native-google-signin/google-signin";
 import type { AppleProfile, ContactEntry, GoogleProfile } from "./api";
 import type { CalendarProvider } from "./types";
 
@@ -15,12 +14,21 @@ export const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
 export const googleConfigured = !!GOOGLE_IOS_CLIENT_ID;
-if (googleConfigured) {
-  GoogleSignin.configure({ iosClientId: GOOGLE_IOS_CLIENT_ID, webClientId: GOOGLE_WEB_CLIENT_ID });
+
+// Loaded only when configured: the native module isn't in Expo Go or on web.
+type GoogleLib = typeof import("@react-native-google-signin/google-signin");
+let google: GoogleLib | null = null;
+function googleLib(): GoogleLib {
+  if (!google) {
+    google = require("@react-native-google-signin/google-signin") as GoogleLib;
+    google.GoogleSignin.configure({ iosClientId: GOOGLE_IOS_CLIENT_ID, webClientId: GOOGLE_WEB_CLIENT_ID });
+  }
+  return google;
 }
 
 /** Native Google sign-in. Returns null if the user cancels. */
 export async function googleSignIn(): Promise<GoogleProfile | null> {
+  const { GoogleSignin, isSuccessResponse } = googleLib();
   await GoogleSignin.hasPlayServices();
   const res = await GoogleSignin.signIn();
   if (!isSuccessResponse(res)) return null;

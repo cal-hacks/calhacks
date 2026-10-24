@@ -1,4 +1,5 @@
-"""Real data in: the iOS Health Shortcut, Screen Time screenshots and photos.
+"""Real data in: the iOS Health Shortcut, Screen Time screenshots, photos and
+busy times from the phone's calendars.
 
 Every endpoint is called as a friend (their ingest token) and writes through
 the agent-only reducers, which refuse anything the friend's consent doesn't
@@ -17,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .auth import current_friend
+from .google_calendar import candidate_windows, free_blocks
 from .llm import VISION_MODEL, Llm
 from .stdb import ReducerRejected, StdbClient
 
@@ -264,3 +266,33 @@ async def ingest_photo(body: PhotoIn, friend_id: Friend, request: Request):
     except ReducerRejected as e:
         raise rejected(e) from e
     return {"place_name": place, "obscurity_score": score, "caption": caption}
+
+
+# ---------- Calendar busy times from the phone ----------
+
+
+class BusyIn(BaseModel):
+    """Busy intervals for about the next week, from every calendar on the
+    phone (iCloud, Google, Outlook). Times only: no titles, places or people."""
+
+    busy: list[Interval] = Field(default_factory=list, max_length=1000)
+
+
+@router.post("/ingest/busy")
+async def ingest_busy(body: BusyIn, friend_id: Friend, request: Request):
+    db = stdb(request)
+    rows = await db.sql(f"SELECT timezone FROM friend WHERE id = {friend_id}")
+    if not rows:
+        raise HTTPException(404, "friend not found")
+    now = datetime.now(UTC)
+    busy = [(b.start.astimezone(UTC), b.end.astimezone(UTC)) for b in body.busy if b.end > b.start]
+    blocks = free_blocks(candidate_windows(rows[0]["timezone"], now), busy)
+    try:
+        await db.call(
+            "set_free_blocks",
+            friend_id=friend_id,
+            blocks=json.dumps([{"start": s.isoformat(), "end": e.isoformat()} for s, e in blocks]),
+        )
+    except ReducerRejected as e:
+        raise rejected(e) from e
+    return {"free_blocks": len(blocks)}

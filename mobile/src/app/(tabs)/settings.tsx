@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { router } from "expo-router";
 import { resetDB, useDB } from "../../lib/db";
 import { ApiError, changePassword, currentUser, deleteAccount, logOut, updateProfile } from "../../lib/api";
 import { pickAvatar } from "../../lib/integrations";
@@ -23,6 +24,7 @@ export default function SettingsScreen() {
         <Txt small muted>Add another calendar or change what your agent can see.</Txt>
       </View>
       <PermissionCards />
+      <Button variant="secondary" title="📤 What your agent shares with the group" onPress={() => router.push("/share")} />
       <AccountSection me={me} />
     </Screen>
   );

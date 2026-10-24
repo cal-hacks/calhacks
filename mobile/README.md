@@ -2,6 +2,30 @@
 
 React Native + Expo SDK 54 + Expo Router. Same screens as `web/`, built natively.
 
+## Run on your iPhone with Expo Go (no Xcode)
+
+The group, Share screen, goals and agent chat all run in Expo Go. Sign in with
+Apple/Google and Apple Screen Time need a native build (below).
+
+1. On the Mac, have SpacetimeDB listening on your network
+   (`spacetime start --listen-addr 0.0.0.0:3000`), the agent web server
+   (`uv run uvicorn agent_service.main:app --host 0.0.0.0 --port 8000`) and the
+   agents (`uv run python -m agent_service.fetch_agents`) running. See the top-level README.
+2. Start Metro for Expo Go:
+   ```bash
+   cd mobile
+   npm install
+   npx expo start --go
+   ```
+3. Install **Expo Go** from the App Store, put the iPhone on the same Wi-Fi as
+   the Mac, and scan the QR code with the Camera app.
+
+The app finds the Mac through Expo's dev server address, so SpacetimeDB and the
+agent service need no extra config on the phone. Log in as `demo` (Riley),
+`maya_runs`, `jordanp` or `sam_l`, all with `demo1234`, or sign up.
+
+`npm run web` runs the same app in a browser, handy for quick checks.
+
 ## Run in the iOS Simulator
 
 ```bash
@@ -21,6 +45,8 @@ Demo account: `demo` / `demo1234`.
 
 | File | Screen |
 |---|---|
+| `(tabs)/group.tsx` | The group chat (live): friends' messages, agent highlights, reactions, plan votes, check-ins |
+| `share.tsx` | What your agent may use (share wins / planning / off per source), calendar busy-time sync, Screen Time screenshot, photo place, Health Shortcut setup, Canvas |
 | `auth.tsx` | Sign up / log in: username + password, Sign in with Apple, Google |
 | `welcome.tsx` | Permissions, shown once after sign-up: calendars, location, photos, Screen Time |
 | `(tabs)/index.tsx` | Dashboard: study hours, goals met per cadence, streaks, history |
@@ -30,8 +56,22 @@ Demo account: `demo` / `demo1234`.
 | `(tabs)/settings.tsx` | Profile friends see, connected data, password, log out, delete account |
 
 Route guards live in `src/app/_layout.tsx` (`Stack.Protected`).
-Data lives on-device in `src/lib/db.ts` (AsyncStorage) and only changes through
-`src/lib/api.ts`, named after the plan's SpacetimeDB reducers.
+
+Two stores, as in `web/`:
+
+- **On the phone** (`src/lib/db.ts`, AsyncStorage): accounts, the friend list,
+  goal history. It only changes through `src/lib/api.ts`.
+- **Live** (`src/lib/live.ts`, SpacetimeDB): the group chat, agent posts, plans
+  and votes, plus what each person shares. Each account gets its own
+  SpacetimeDB identity; seeded people claim their group member, new accounts
+  join with the `CATCHUP` invite. `api.ts` pushes shared goals, consent, roast
+  opt-in and profile changes. `src/module_bindings/` is generated:
+  `spacetime generate --lang typescript --out-dir mobile/src/module_bindings --module-path server`.
+
+**Calendar:** iOS keeps every calendar account (iCloud, Google, Outlook) in one
+store. With calendar sharing on, the app sends the next week's busy times
+(start and end only, no titles) to the agent service whenever it comes to the
+foreground, and the agent turns them into free blocks for planning.
 
 ## Shipping to the App Store
 
@@ -85,4 +125,8 @@ Without `APPLE_TEAM_ID`, the Screen Time card offers the screenshot option inste
   Google sign-in. Requires a rebuild (`npx expo prebuild --clean && npx expo run:ios`).
   Without them, Google runs a demo flow.
 - `EXPO_PUBLIC_AGENT_API_URL`, `EXPO_PUBLIC_AGENT_KEY`: agent service URL and optional shared secret.
+  Default in development: port 8000 on the Mac running Expo.
+- `EXPO_PUBLIC_SPACETIMEDB_URI`, `EXPO_PUBLIC_SPACETIMEDB_DB`: the live group
+  (default: `ws://<the Mac running Expo>:3000`, database `calhacks`). For
+  Maincloud: `wss://maincloud.spacetimedb.com` and your database name.
 - `APPLE_TEAM_ID` (build-time): turns on Apple Screen Time.

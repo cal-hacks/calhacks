@@ -91,6 +91,7 @@ class Watcher:
     last_stat: int = 0
     last_photo: int = 0
     done_goals: set[int] = field(default_factory=set)
+    groups: frozenset[int] = frozenset()
 
     async def tick(self, gather: Callable[[], Awaitable[list[FriendUpdate]]]) -> None:
         """One poll. `gather` asks the friend agents for updates (used for plans)."""
@@ -107,20 +108,17 @@ class Watcher:
         photos = await self.stdb.sql("SELECT id, friend_id, place_name, obscurity_score, caption FROM photo")
         done = {g["id"] for g in goals if g["status"] == "done"}
 
-        if not self.primed:
+        # reset_demo + seed_demo makes a new group, and ids keep counting up, so
+        # the reseeded history would look new. Start over when the groups change.
+        groups = frozenset(r["id"] for r in await self.stdb.sql("SELECT id FROM friend_group"))
+        if not self.primed or groups != self.groups:
             self.last_checkin = max((c["id"] for c in checkins), default=0)
             self.last_message = max((m["id"] for m in messages), default=0)
             self.last_stat = max((x["id"] for x in stats), default=0)
             self.last_photo = max((p["id"] for p in photos), default=0)
             self.done_goals = done
+            self.groups = groups
             self.primed = True
-            return
-        # A reset gives everything new, lower ids; start over from there.
-        if any(
-            rows and max(r["id"] for r in rows) < last
-            for rows, last in ((checkins, self.last_checkin), (messages, self.last_message), (stats, self.last_stat))
-        ):
-            self.primed = False
             return
 
         for c in sorted(checkins, key=lambda c: c["id"]):
