@@ -24,6 +24,7 @@ each phone is a different member of the group.
 | `/goals` | Daily / weekly / monthly / yearly goals, how the agent tracks each, share toggle, manual logging |
 | `/` | Dashboard: study hours this month, goals met per cadence, streaks, history |
 | `/group` | The group chat (live): friends' messages, agent highlights, plan votes, check-ins |
+| `/share` | Consent per source (share wins / planning only / off), Screen Time and photo uploads, Health Shortcut setup, Canvas |
 
 ## Data layer
 
@@ -51,7 +52,9 @@ Passwords are hashed client-side for the demo only. Real auth belongs on the ser
   For phones on a local server, start it with `spacetime start --listen-addr 0.0.0.0:3000`.
 - `VITE_GOOGLE_CLIENT_ID`: enables real Google sign-in and Google Calendar
   (free/busy) consent. Without it, Google buttons run a demo flow.
-- `VITE_AGENT_API_URL`: agent service base URL. Outlook / Apple calendar
-  connect redirects to `${VITE_AGENT_API_URL}/oauth/<provider>/start?user_id=…&return_to=…`
-  and expects a redirect back with `?connected=<provider>&account=<email>`.
-  Google tokens are POSTed to `/calendar/google/token`.
+- `VITE_AGENT_API_URL`: agent service base URL (default: port 8000 on the host
+  that served the page). Uploads, the Health Shortcut, Google Calendar tokens
+  (`/calendar/google/token`) and Canvas go there with the friend's ingest token.
+  Only when it's set explicitly, Outlook / Apple calendar connect redirects to
+  `${VITE_AGENT_API_URL}/oauth/<provider>/start?user_id=…&return_to=…` and expects
+  a redirect back with `?connected=<provider>&account=<email>`.

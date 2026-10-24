@@ -1,9 +1,11 @@
 import type { CalendarProvider, Id } from "./types";
 import type { ContactEntry, GoogleProfile } from "./api";
+import { agentPost } from "./agentApi";
 
 // Browser-side glue for third-party sign-in, device permissions and contacts.
-// Anything that needs a server secret (Outlook/Apple OAuth, Calendar sync)
-// is handed to the agent service when VITE_AGENT_API_URL is set.
+// Google Calendar tokens go to the agent service for free/busy (agentApi.ts).
+// Outlook/Apple OAuth needs server secrets and only runs when
+// VITE_AGENT_API_URL is set.
 
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 export const AGENT_API_URL = import.meta.env.VITE_AGENT_API_URL as string | undefined;
@@ -72,14 +74,12 @@ export async function connectCalendar(provider: CalendarProvider, userId: Id, em
           } catch {
             // Non-fatal; keep the hint.
           }
-          if (AGENT_API_URL) {
-            // Hand the token to the agent service so it can query free/busy.
-            fetch(`${AGENT_API_URL}/calendar/google/token`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_id: userId, access_token: resp.access_token }),
-            }).catch(() => {});
-          }
+          // Hand the token to the agent service so it can query free/busy.
+          // If calendar sharing isn't on yet, the service retries within a minute.
+          agentPost("/calendar/google/token", {
+            access_token: resp.access_token,
+            expires_in: Number(resp.expires_in) || 3600,
+          }).catch((e) => console.warn("Orbit calendar sync:", e instanceof Error ? e.message : e));
           resolve({ status: "connected", account });
         },
         error_callback: () => resolve({ status: "cancelled" }),

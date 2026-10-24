@@ -58,16 +58,25 @@ async def propose(stdb: StdbClient, group_id: int, updates: list[FriendUpdate]) 
         return f"There's already a plan open in the group chat:\n{listed}\nVote there to lock it in."
 
     friends = [u.friend for u in updates]
-    windows = common_free_windows(updates)
+    windows = common_free_windows(updates, limit=7)
     if not windows:
         return "I couldn't find a time this week when everyone's free. Want me to check next week?"
+    # Prefer times after anyone's heavy week, if there are any.
+    busy = [(u.friend, u.busy_through) for u in updates if u.busy_through]
+    last_busy = max((d for _, d in busy), default=None)
+    after = [w for w in windows if last_busy is None or w[0].date() > last_busy]
+    picked = (after or windows)[:3]
+    note = ""
+    if busy and after:
+        names = " and ".join(f.name.split()[0] for f, _ in busy)
+        note = f"; after {names}'s deadlines"
     options = [
         {
             "label": f"Video call · {format_time(start, friends)}",
-            "detail": f"Everyone's free for {int((end - start).total_seconds() // 3600)}h+",
+            "detail": f"Everyone's free for {int((end - start).total_seconds() // 3600)}h+{note}",
             "startsAt": start.isoformat(),
         }
-        for start, end in windows
+        for start, end in picked
     ]
     try:
         await stdb.call(

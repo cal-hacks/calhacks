@@ -84,8 +84,12 @@ describe('joining', () => {
     expect(() => run(stranger, ctx => mod.joinGroup(ctx, { inviteCode: DEMO_CODES.group, name: 'Again', city: '', timezone: '', avatar: '' }))).toThrow(/already/);
   });
 
-  test('a seeded friend can only be claimed once', () => {
-    expect(() => run(stranger, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.maya }))).toThrow(/already claimed/);
+  test('claiming again moves a seeded friend to the new device', () => {
+    run(stranger, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.maya }));
+    expect(mod.myFriend(h.viewContext(stranger) as any, {} as any)).toMatchObject({ name: 'Maya Chen' });
+    expect(mod.myFriend(h.viewContext(maya) as any, {} as any)).toBeUndefined();
+    // Someone who already has a friend can't take another.
+    expect(() => run(sam, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.maya }))).toThrow(/already joined/);
   });
 });
 

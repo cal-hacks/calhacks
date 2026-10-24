@@ -5,8 +5,9 @@ Friend agents only pass on things that are already shared with the group
 times count as planning data, so they're shared unless calendar is off.
 """
 
+import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .stdb import StdbClient
@@ -28,6 +29,8 @@ class FriendUpdate:
     friend: Friend
     highlights: list[str] = field(default_factory=list)
     free_blocks: list[tuple[datetime, datetime]] = field(default_factory=list)
+    # Last day of a heavy week (Canvas deadlines). Planning only: never shown in a digest.
+    busy_through: date | None = None
 
 
 async def group_friends(stdb: StdbClient, group_id: int) -> list[Friend]:
@@ -69,7 +72,24 @@ async def friend_update(stdb: StdbClient, friend: Friend, since: datetime) -> Fr
     if calendar and calendar[0]["share_level"] != "off":
         blocks = await stdb.sql(f"SELECT start, end FROM free_block WHERE friend_id = {fid}")
         update.free_blocks = sorted((b["start"], b["end"]) for b in blocks)
+    update.busy_through = await busy_through(stdb, fid)
     return update
+
+
+async def busy_through(stdb: StdbClient, friend_id: int) -> date | None:
+    """From the latest Canvas deadlines (or seeded busy_week) stat, if it's a busy week."""
+    rows = await stdb.sql(f"SELECT id, type, value FROM stat WHERE friend_id = {friend_id}")
+    for r in sorted(rows, key=lambda r: r["id"], reverse=True):
+        if r["type"] not in ("canvas_deadlines", "busy_week"):
+            continue
+        try:
+            value = json.loads(r["value"])
+        except ValueError:
+            return None
+        busy = value.get("busy", r["type"] == "busy_week")
+        through = value.get("through")
+        return date.fromisoformat(through) if busy and through else None
+    return None
 
 
 def common_free_windows(

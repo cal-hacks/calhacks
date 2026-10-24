@@ -16,6 +16,7 @@ import type {
 } from "../module_bindings/types";
 import type { Goal, GoalLog, Permissions, SharingPrefs, User } from "./types";
 import { currentProgress } from "./goals";
+import { randomSalt, sha256 } from "./hash";
 
 // The shared, live side of Orbit: the group chat, agent posts, plans and
 // whatever each friend chose to share. It runs on the SpacetimeDB module in
@@ -151,9 +152,12 @@ export function connectAs(user: User) {
       for (const table of [
         c.db.friend, c.db.friendGroup, c.db.membership, c.db.feedItem, c.db.reaction, c.db.plan,
         c.db.planOption, c.db.planVote, c.db.goal, c.db.checkin, c.db.myFriend, c.db.myConsent, c.db.mySettings,
-      ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void }[]) {
+      ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?(cb: () => void): void }[]) {
         table.onInsert(queueRefresh);
         table.onDelete(queueRefresh);
+        // Tables with a primary key report changes (a confirmed plan, new
+        // goal progress, a consent switch) as updates, not insert + delete.
+        table.onUpdate?.(queueRefresh);
       }
       c.subscriptionBuilder()
         .onApplied(() => {
@@ -206,13 +210,7 @@ async function ensureMember(c: DbConnection, user: User) {
     }
     set({ status: "ready" });
   } catch (e) {
-    const why = message(e);
-    set({
-      status: "error",
-      error: why.includes("already claimed")
-        ? `${user.displayName} is already signed in on another device. Reset the demo (reset_demo + seed_demo) to free it.`
-        : `Couldn't join the group: ${why}`,
-    });
+    set({ status: "error", error: `Couldn't join the group: ${message(e)}` });
   }
 }
 
@@ -239,8 +237,37 @@ export async function votePlan(planId: bigint, optionId: bigint) {
   await live()?.reducers.votePlan({ planId, optionId, friendId: 0n });
 }
 
+/** What a source may be used for: shared as highlights, planning only, or off. */
+export async function setConsent(source: string, shareLevel: "highlights" | "planning_only" | "off") {
+  await live()?.reducers.setConsent({ source, shareLevel });
+}
+
 export async function setIngestTokenHash(tokenHash: string) {
   await live()?.reducers.setIngestToken({ tokenHash });
+}
+
+const INGEST_TOKEN_KEY = "orbit.ingestToken";
+
+/**
+ * This friend's ingest token for calls to the agent service. Made on first
+ * need: the module keeps only its SHA-256 hash, the browser keeps the token.
+ * Null until the live group is ready, since the hash has to reach the module.
+ */
+export async function ingestToken(): Promise<string | null> {
+  const me = state.me;
+  if (!live() || !me) return null;
+  const key = `${INGEST_TOKEN_KEY}.${me.id}`;
+  const saved = localStorage.getItem(key);
+  if (saved) return saved;
+  const token = randomSalt() + randomSalt();
+  await setIngestTokenHash(sha256(token));
+  localStorage.setItem(key, token);
+  return token;
+}
+
+/** Drop a token the agent service no longer knows (e.g. after reset_demo). */
+export function forgetIngestToken() {
+  if (state.me) localStorage.removeItem(`${INGEST_TOKEN_KEY}.${state.me.id}`);
 }
 
 // ---------- sync from the local store (api.ts calls these) ----------
@@ -277,21 +304,24 @@ export function syncGoals(userId: string, goals: Goal[], logs: GoalLog[]) {
   run().catch(warn("goals"));
 }
 
-/** Orbit's permissions decide what each source may be used for. */
+/**
+ * Orbit's device permissions gate each source: revoking one turns it off, and
+ * granting one turns it on (as highlights) only if it was off. Finer choices
+ * (planning only) are made on the Share page and kept.
+ */
 export function syncConsent(perms: Permissions) {
   const c = live();
   if (!c) return;
-  const calendar = Object.values(perms.calendars).some((cal) => cal.connected);
-  const levels: Record<string, string> = {
-    calendar: calendar ? "highlights" : "off",
-    photos: perms.photos === "granted" ? "highlights" : "off",
-    screen_time: perms.screenTime !== "off" ? "highlights" : "off",
+  const granted: Record<string, boolean> = {
+    calendar: Object.values(perms.calendars).some((cal) => cal.connected),
+    photos: perms.photos === "granted",
+    screen_time: perms.screenTime !== "off",
   };
   const current = new Map(state.myConsent.map((r) => [r.source, r.shareLevel]));
-  for (const [source, shareLevel] of Object.entries(levels)) {
-    if (current.get(source) !== shareLevel) {
-      c.reducers.setConsent({ source, shareLevel }).catch(warn("consent"));
-    }
+  for (const [source, on] of Object.entries(granted)) {
+    const level = current.get(source) ?? "off";
+    const next = !on ? "off" : level === "off" ? "highlights" : level;
+    if (next !== level) c.reducers.setConsent({ source, shareLevel: next }).catch(warn("consent"));
   }
 }
 

@@ -71,12 +71,34 @@ Only the hash goes into SpacetimeDB. Calling `set_ingest_token` again replaces t
 
 ## Endpoints
 
-| Endpoint | Auth | Notes |
-|---|---|---|
-| `GET /health` | none | `{"ok": true}` |
-| `GET /me` | ingest token | `{"friend_id", "name"}`; use it to check a token works |
+All but `/health` are called as a friend: `Authorization: Bearer <ingest token>`. Writes go through agent-only reducers, so a source the friend has turned off is refused with 403 and the module's reason.
 
-Allowed browser origins come from `WEB_ORIGINS` (default `http://localhost:5173`).
+| Endpoint | Body | What it does |
+|---|---|---|
+| `GET /health` | | `{"ok": true}` |
+| `GET /me` | | `{"friend_id", "name"}`; checks a token works |
+| `POST /ingest/health` | `{"date"?, "steps"?, "sleep"?: [{start, end}], "workouts"?: [{kind, minutes, distance_km?, start?}]}` | The iOS Shortcut. `steps` may be a number or a list of samples; sleep samples merge into one night |
+| `POST /ingest/screen-time` | `{"media_type", "data"}` (base64 screenshot, max 5 MB) | Claude Haiku reads daily average, top apps and pickups; numbers are validated before storing |
+| `POST /ingest/photo` | `{"lat"?, "lng"?, "taken_at"?, "place_name"?}` | Only location and time, never the image. Reverse-geocodes with OpenStreetMap (or uses `place_name`), Claude Haiku rates how unusual it is and writes a caption; GPS goes to the private `photo_location` table |
+| `POST /calendar/google/token` | `{"access_token", "expires_in"}` | Google free/busy for the next week becomes free blocks (evenings and weekends in the friend's time zone); refreshed every 15 min while the token lasts |
+| `POST /canvas/token` | `{"base_url", "token"}` | Canvas planner deadlines for the next week (3+ = heavy week); refreshed hourly. Only `https` public hostnames |
+| `POST /agent/chat` | | Goal-coach chat (above) |
+
+Google and Canvas tokens are kept on disk next to this README (`.google_tokens.json`, `.canvas_tokens.json`, mode 600, gitignored), never in SpacetimeDB. Allowed browser origins come from `WEB_ORIGINS` (default `*`: requests carry bearer tokens, not cookies).
+
+## What the watcher posts
+
+It runs every 3 s inside the agents process. Seed data is never posted, and the module still enforces one agent post per friend per day.
+
+| Source | Posted when | Kind |
+|---|---|---|
+| Check-in | Claude thinks it's worth sharing | `highlight` |
+| Goal reaches its target | always (Claude writes it) | `goal_hit` |
+| Workout, 10k+ steps | health is shared as highlights | `highlight` |
+| Screen Time | lowest in the group (praise); highest only if the friend allowed roasts | `highlight` / `roast` |
+| Photo | unusual enough (score ≥ 0.6); photos must be shared as highlights | `obscure_place` |
+| Sleep, Canvas deadlines | never: planning and check-on-me only | |
+| "we should catch up" in the chat | coordinator finds shared free time, preferring times after anyone's heavy week | `plan_proposal` |
 
 ## Fetch.ai agents (Agentverse + ASI:One)
 

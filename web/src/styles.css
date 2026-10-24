@@ -445,3 +445,11 @@ textarea.input { resize: vertical; }
   .chat { max-height: 55vh; }
   .composer .chip-text { display: none; }
 }
+
+/* ---------- Share page ---------- */
+.consent-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.consent-row:last-child { border-bottom: 0; }
+label.btn { display: inline-flex; align-self: flex-start; cursor: pointer; }
+label.btn.disabled { opacity: 0.5; cursor: not-allowed; }
+.shortcut-steps { padding-left: 18px; margin: 0; }
+.shortcut-steps code { overflow-wrap: anywhere; font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }

@@ -1,7 +1,9 @@
 """Watches the shared world state and acts on it (plan flows B and C).
 
-- A friend's check-in or a goal reaching its target: Claude decides whether
-  it's worth a group-chat post, and the friend's agent posts it.
+- A friend's check-in, a goal reaching its target, a workout or big step day
+  (Health Shortcut), or a Screen Time win: Claude decides whether it's worth a
+  group-chat post, and the friend's agent posts it. An unusual photo becomes a
+  "weirdest place" post.
 - "We should catch up" (and similar) in the chat: the coordinator finds times
   everyone's free and posts a plan to vote on.
 
@@ -10,6 +12,7 @@ remembers the last ids it saw. The first poll only records where things are,
 so restarting the agents never re-posts old news.
 """
 
+import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -38,6 +41,16 @@ Rules:
 - If it's too personal, sad, or unclear, set share to false.
 - Write in third person about the friend, one or two short sentences, warm and a little playful, one emoji at most.
 - Where it fits, end with a light hook for friends to reply to ("Anyone want to join?")."""
+
+ROAST_SYSTEM = """You are a friend's agent in a group chat of college friends. This friend has explicitly \
+opted in to being gently roasted. Write one short, affectionate, clearly playful line (third person, one \
+emoji at most) that crowns them champion of the stat you're given. Never mean, never about health or worth. \
+Set share to false if it could land badly."""
+
+# Steps worth a post on their own.
+STEP_WIN = 10_000
+# Photos at least this unusual become "weirdest place" posts.
+OBSCURE_PLACE = 0.6
 
 STORY_SCHEMA = {
     "type": "object",
@@ -75,6 +88,8 @@ class Watcher:
     primed: bool = False
     last_checkin: int = 0
     last_message: int = 0
+    last_stat: int = 0
+    last_photo: int = 0
     done_goals: set[int] = field(default_factory=set)
 
     async def tick(self, gather: Callable[[], Awaitable[list[FriendUpdate]]]) -> None:
@@ -88,17 +103,22 @@ class Watcher:
         messages = await self.stdb.sql(
             "SELECT id, group_id, friend_id, text FROM feed_item WHERE kind = 'message'"
         )
+        stats = await self.stdb.sql("SELECT id, friend_id, type, value, source FROM stat")
+        photos = await self.stdb.sql("SELECT id, friend_id, place_name, obscurity_score, caption FROM photo")
         done = {g["id"] for g in goals if g["status"] == "done"}
 
         if not self.primed:
             self.last_checkin = max((c["id"] for c in checkins), default=0)
             self.last_message = max((m["id"] for m in messages), default=0)
+            self.last_stat = max((x["id"] for x in stats), default=0)
+            self.last_photo = max((p["id"] for p in photos), default=0)
             self.done_goals = done
             self.primed = True
             return
         # A reset gives everything new, lower ids; start over from there.
-        if checkins and max(c["id"] for c in checkins) < self.last_checkin or (
-            messages and max(m["id"] for m in messages) < self.last_message
+        if any(
+            rows and max(r["id"] for r in rows) < last
+            for rows, last in ((checkins, self.last_checkin), (messages, self.last_message), (stats, self.last_stat))
         ):
             self.primed = False
             return
@@ -117,21 +137,93 @@ class Watcher:
                                      fallback=f"{friend.first} hit their goal: {g['description']} 🎯")
         self.done_goals = done
 
+        new_stats = [x for x in sorted(stats, key=lambda x: x["id"]) if x["id"] > self.last_stat]
+        if new_stats:
+            self.last_stat = new_stats[-1]["id"]
+            await self.stats(friends, new_stats, stats)
+
+        for p in sorted(photos, key=lambda p: p["id"]):
+            if p["id"] > self.last_photo:
+                self.last_photo = p["id"]
+                friend = friends.get(p["friend_id"])
+                if friend and p["obscurity_score"] >= OBSCURE_PLACE:
+                    # The caption was already written (and consent checked) when it was added.
+                    await self.post(friend, "obscure_place", f"Weirdest place of the week: {p['caption']}")
+
         for m in sorted(messages, key=lambda m: m["id"]):
             if m["id"] > self.last_message:
                 self.last_message = m["id"]
                 if CATCH_UP.search(m["text"]):
                     await self.plan(m["group_id"], gather)
 
-    async def share(self, friend: Friendly, kind: str, what: str, *, fallback: str) -> None:
-        group = await self.group_of(friend.id)
-        if group is None:
+    async def stats(self, friends: dict[int, Friendly], new: list[dict], all_stats: list[dict]) -> None:
+        """Real data (not seed) becomes a post only if the friend shares that source as highlights."""
+        consent = {
+            (r["friend_id"], r["source"]): r["share_level"]
+            for r in await self.stdb.sql("SELECT friend_id, source, share_level FROM consent")
+        }
+        roast_ok = {
+            r["friend_id"]: r["roast_ok"] for r in await self.stdb.sql("SELECT friend_id, roast_ok FROM friend_settings")
+        }
+        for x in new:
+            friend = friends.get(x["friend_id"])
+            if friend is None or x["source"] == "seed":
+                continue
+            try:
+                value = json.loads(x["value"])
+            except ValueError:
+                continue
+            health = consent.get((friend.id, "health")) == "highlights"
+            if x["type"] == "workout" and health:
+                bits = [value.get("kind", "workout")]
+                if value.get("distance_km"):
+                    bits.append(f"{value['distance_km']} km")
+                if value.get("minutes"):
+                    bits.append(f"{value['minutes']} min")
+                await self.share(friend, "highlight", f"{friend.first} just logged a workout: {', '.join(bits)}.",
+                                 fallback=f"{friend.first} got a workout in: {', '.join(bits)} 💪")
+            elif x["type"] == "steps" and health and value.get("count", 0) >= STEP_WIN:
+                await self.share(friend, "highlight", f"{friend.first} walked {value['count']:,} steps today.",
+                                 fallback=f"{friend.first} walked {value['count']:,} steps today 👟")
+            elif x["type"] == "screen_time" and consent.get((friend.id, "screen_time")) == "highlights":
+                await self.screen_time(friend, value, friends, all_stats, consent, roast_ok)
+            # Sleep and Canvas deadlines are never posted: they're for check-on-me and planning only.
+
+    async def screen_time(self, friend, value, friends, all_stats, consent, roast_ok) -> None:
+        """Lowest in the group gets praised; highest only as an opted-in roast."""
+        latest: dict[int, float] = {}
+        for x in sorted(all_stats, key=lambda x: x["id"]):
+            if x["type"] == "screen_time" and consent.get((x["friend_id"], "screen_time")) == "highlights":
+                try:
+                    latest[x["friend_id"]] = float(json.loads(x["value"])["daily_avg_hours"])
+                except (ValueError, KeyError, TypeError):
+                    pass
+        if len(latest) < 2 or friend.id not in latest:
             return
-        story = await self.llm.write_json(STORY_SYSTEM, what, STORY_SCHEMA)
+        hours = latest[friend.id]
+        if hours == min(latest.values()):
+            await self.share(friend, "highlight",
+                             f"{friend.first} has the least screen time in the group: {hours:g} hours a day.",
+                             fallback=f"Least screen time in the group: {friend.first}, at {hours:g}h a day 🌿")
+        elif hours == max(latest.values()) and roast_ok.get(friend.id):
+            await self.share(friend, "roast",
+                             f"{friend.first} has the most screen time in the group: {hours:g} hours a day.",
+                             fallback=f"Screen Time champion of the week 📱👑 {friend.first}, at {hours:g}h a day.",
+                             system=ROAST_SYSTEM)
+
+    async def share(
+        self, friend: Friendly, kind: str, what: str, *, fallback: str, system: str = STORY_SYSTEM
+    ) -> None:
+        story = await self.llm.write_json(system, what, STORY_SCHEMA)
         if story is not None and not story["share"]:
             log.info("Agent for %s chose not to share: %s", friend.name, what)
             return
-        text = (story or {}).get("text") or fallback
+        await self.post(friend, kind, (story or {}).get("text") or fallback)
+
+    async def post(self, friend: Friendly, kind: str, text: str) -> None:
+        group = await self.group_of(friend.id)
+        if group is None:
+            return
         try:
             await self.stdb.call(
                 "post_feed_item",
