@@ -20,6 +20,7 @@ class Settings:
     fetch_agent_seed: str
     agentverse_api_key: str
     fetch_port: int
+    google_token_file: Path
 
 
 def load_settings() -> Settings:
@@ -36,10 +37,13 @@ def load_settings() -> Settings:
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         web_origins=[
             o.strip()
-            for o in os.environ.get("WEB_ORIGINS", "http://localhost:5173").split(",")
+            for o in os.environ.get("WEB_ORIGINS", "*").split(",")
             if o.strip()
         ],
         fetch_agent_seed=os.environ.get("FETCH_AGENT_SEED", ""),
         agentverse_api_key=os.environ.get("AGENTVERSE_API_KEY", ""),
         fetch_port=int(os.environ.get("FETCH_PORT", "8001")),
+        google_token_file=Path(
+            os.environ.get("GOOGLE_TOKEN_FILE") or REPO_ROOT / "agent" / ".google_tokens.json"
+        ),
     )

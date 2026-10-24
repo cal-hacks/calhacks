@@ -29,9 +29,10 @@ web app ──live subscriptions / reducer calls──▶ SpacetimeDB (server/) 
    spacetime call -s local calhacks seed_demo
    ```
 2. **Settings:** copy `.env.example` to `.env` and fill in `SPACETIMEDB_TOKEN` (`spacetime login show --token`), `ANTHROPIC_API_KEY` and `FETCH_AGENT_SEED`.
-3. **Agents + watcher** (`agent/README.md`):
+3. **Agents + watcher, and the agent web server** for uploads, the Health Shortcut, Calendar and Canvas (`agent/README.md`), in two terminals:
    ```bash
    cd agent && uv sync && uv run python -m agent_service.fetch_agents
+   cd agent && uv run uvicorn agent_service.main:app --host 0.0.0.0 --port 8000
    ```
 4. **Web app:**
    ```bash
@@ -40,6 +41,20 @@ web app ──live subscriptions / reducer calls──▶ SpacetimeDB (server/) 
    Log in as `demo` / `demo1234` (Riley). Other phones on the same Wi-Fi open the LAN URL Vite prints and log in as `maya_runs`, `jordanp` or `sam_l` (same password).
 
 To start the demo over: `spacetime call -s local calhacks reset_demo`, then `seed_demo`.
+
+## Real data
+
+The **Share** page sets, per source, whether the agent may share wins, use it for planning only, or not at all, and connects each source:
+
+| Source | How it gets in |
+|---|---|
+| Apple Health | iOS Shortcut POSTs steps, sleep and workouts to `/ingest/health` with the friend's token (shown on the Share page) |
+| Screen Time | Upload a screenshot; Claude reads it |
+| Photos | Pick a photo; only its GPS and time are sent. OpenStreetMap names the place, Claude rates how unusual it is |
+| Google Calendar | Connect in Profile → Connected data (needs `VITE_GOOGLE_CLIENT_ID`); free/busy only |
+| Canvas | Paste your school URL and an access token |
+
+The seed still fills in a week of history so the demo has something to show.
 
 ## The demo
 

@@ -13,7 +13,7 @@ import asyncio
 import logging
 import re
 import socket
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -49,6 +49,7 @@ class UpdateReply(Model):
     timezone: str
     highlights: list[str]
     free_blocks: list[list[str]]  # [[start, end], ...] ISO
+    busy_through: str | None = None  # ISO date; planning only
 
 
 def to_reply(u: FriendUpdate) -> UpdateReply:
@@ -59,6 +60,7 @@ def to_reply(u: FriendUpdate) -> UpdateReply:
         timezone=u.friend.timezone,
         highlights=u.highlights,
         free_blocks=[[s.isoformat(), e.isoformat()] for s, e in u.free_blocks],
+        busy_through=u.busy_through.isoformat() if u.busy_through else None,
     )
 
 
@@ -67,6 +69,7 @@ def from_reply(r: UpdateReply) -> FriendUpdate:
         Friend(r.friend_id, r.name, r.city, r.timezone),
         r.highlights,
         [(datetime.fromisoformat(s), datetime.fromisoformat(e)) for s, e in r.free_blocks],
+        date.fromisoformat(r.busy_through) if r.busy_through else None,
     )
 
 

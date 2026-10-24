@@ -121,3 +121,22 @@ async def test_propose_reuses_open_plan():
     block = [(at(0, 23), at(1, 2))]
     text = await propose(stdb, 7, [FriendUpdate(MAYA, free_blocks=block)])
     assert text == "There's already a plan open in the group chat:\n1. Video call · Wed\nVote there to lock it in."
+
+
+async def test_propose_prefers_times_after_a_heavy_week():
+    calls = []
+
+    def handler(request: httpx.Request):
+        if request.url.path.endswith("/sql"):
+            return httpx.Response(200, json=[{"schema": {"elements": []}, "rows": []}])
+        calls.append(json.loads(request.content))
+        return httpx.Response(200)
+
+    stdb = StdbClient("http://db", "calhacks", "owner", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    blocks = [(at(d, 23), at(d + 1, 2)) for d in range(6)]
+    jordan = FriendUpdate(JORDAN, free_blocks=blocks, busy_through=at(2, 0).date())
+    await propose(stdb, 7, [FriendUpdate(MAYA, free_blocks=blocks), jordan])
+    options = json.loads(calls[0]["options"])
+    # Oct 24-26 are Jordan's deadline days; the first option is the 27th.
+    assert [o["startsAt"][:10] for o in options] == ["2026-10-27", "2026-10-28", "2026-10-29"]
+    assert options[0]["detail"].endswith("after Jordan's deadlines")

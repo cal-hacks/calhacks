@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 dist/
 .DS_Store
+# Google Calendar and Canvas tokens the agent service keeps
+.google_tokens.json
+.canvas_tokens.json

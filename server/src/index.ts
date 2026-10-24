@@ -239,7 +239,10 @@ export const joinGroup = spacetimedb.reducer(
   }
 );
 
-// Claim a seeded friend row (demo phones use this).
+// Claim a seeded friend row (demo phones use this). Claiming again from
+// another device moves the friend there: the codes ship inside the demo app,
+// so they're a convenience, not a secret, and a cleared browser shouldn't
+// lock a demo phone out.
 export const claimFriend = spacetimedb.reducer(
   { claimCode: t.string() },
   (ctx, { claimCode }) => {
@@ -248,7 +251,6 @@ export const claimFriend = spacetimedb.reducer(
     const code = ctx.db.invite.code.find(claimCode.trim());
     if (!code || code.kind !== 'friend') fail('unknown claim code');
     const row = requireFriendRow(ctx, code.targetId);
-    if (row.identity) fail('this friend was already claimed');
     ctx.db.friend.id.update({ ...row, identity: ctx.sender });
   }
 );
