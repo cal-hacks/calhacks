@@ -18,6 +18,7 @@ Keeps long-distance college friends in each other's lives. Ask it to catch you u
 | Agent | Address |
 |---|---|
 | catchup-coordinator | `agent1qwp5320jwrzwuvhp8zwq00k29l0fpcgmmektd8n2rjqjm6gzjjn0k6l80ft` |
+| catchup-friend-riley-demo | `agent1qgqwwm84l9sau0a52rug6mk4t4dh25e4hj2df37nqwnp7a44ycewv7cr7u9` |
 | catchup-friend-maya-chen | `agent1q09egqemj49m6z277kuc3f4m8rdc7ctzc7vkfx53myknvuamfajast7uzuq` |
-| catchup-friend-sam-okafor | `agent1q2u48cx6per3swyu4glemcj4c707udgjcp9krwgafefa5m2edycku8xr8tz` |
-| catchup-friend-jordan-rivera | `agent1qtftvc3zjdvtg7j4yg6qjfsmea6hkw9avpc66wcra6p7efzyc05gjx84e06` |
+| catchup-friend-sam-lee | `agent1qtx3qcxewate6504frgkrslp6ur0ldfws86apzky3mphhnqc59gvg7klexm` |
+| catchup-friend-jordan-park | `agent1qtv2tujnezacfv2qmyznes5ras9lmq9ww9gfqka0862e2kd3ym9esxcnvc7` |
