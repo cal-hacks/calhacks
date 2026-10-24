@@ -125,6 +125,19 @@ export const freeBlock = table(
   }
 );
 
+// Lets the iOS Shortcut and browser uploads prove which friend they are to
+// the agent service. The browser makes a random token with Web Crypto and
+// stores only its SHA-256 hash here (ctx.random is seeded from the timestamp,
+// so it can't make secrets).
+export const ingestToken = table(
+  {},
+  {
+    friendId: t.u64().primaryKey(),
+    tokenHash: t.string(), // 64 lowercase hex chars
+    createdAt: t.timestamp(),
+  }
+);
+
 // The agent service's identity. It must also be the database owner so it can
 // read private tables over HTTP SQL.
 export const agentIdentity = table(
@@ -241,6 +254,7 @@ const spacetimedb = schema({
   stat,
   photoLocation,
   freeBlock,
+  ingestToken,
   agentIdentity,
   photo,
   goal,

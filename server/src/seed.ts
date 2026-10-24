@@ -246,6 +246,7 @@ const RESETTABLE = [
   'stat',
   'photoLocation',
   'freeBlock',
+  'ingestToken',
   'photo',
   'goal',
   'checkin',

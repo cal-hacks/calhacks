@@ -220,3 +220,24 @@ describe('views', () => {
     expect(mod.myConsent(h.viewContext(stranger) as any, {} as any)).toEqual([]);
   });
 });
+
+describe('ingest token', () => {
+  const hash = (c: string) => c.repeat(64);
+
+  test('friends set, replace and clear their own token hash', () => {
+    run(maya, ctx => mod.setIngestToken(ctx, { tokenHash: hash('a') }));
+    run(maya, ctx => mod.setIngestToken(ctx, { tokenHash: hash('b') }));
+    expect(rows('ingestToken')).toEqual([
+      expect.objectContaining({ friendId: fid('Maya'), tokenHash: hash('b') }),
+    ]);
+    run(maya, ctx => mod.clearIngestToken(ctx, {}));
+    expect(rows('ingestToken')).toHaveLength(0);
+  });
+
+  test('rejects anything but a SHA-256 hex hash, and non-friends', () => {
+    expect(() => run(maya, ctx => mod.setIngestToken(ctx, { tokenHash: 'secret' }))).toThrow(/64 lowercase hex/);
+    expect(() => run(maya, ctx => mod.setIngestToken(ctx, { tokenHash: hash('A') }))).toThrow(/64 lowercase hex/);
+    expect(() => run(agent, ctx => mod.setIngestToken(ctx, { tokenHash: hash('a') }))).toThrow(/not the agent/);
+    expect(() => run(stranger, ctx => mod.setIngestToken(ctx, { tokenHash: hash('a') }))).toThrow(/join the group/);
+  });
+});

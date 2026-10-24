@@ -1,0 +1,23 @@
+[project]
+name = "agent-service"
+version = "0.1.0"
+description = "Friend agents and coordinator: ingest, Claude, SpacetimeDB"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40",
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+    "uagents>=0.26.1",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

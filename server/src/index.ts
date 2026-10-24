@@ -267,6 +267,32 @@ export const updateProfile = spacetimedb.reducer(
   }
 );
 
+// --- Ingest token (friend-only) ---
+
+// Replaces the caller's token. The browser sends the SHA-256 hash and keeps
+// the token itself for the Shortcut and uploads.
+export const setIngestToken = spacetimedb.reducer(
+  { tokenHash: t.string() },
+  (ctx, { tokenHash }) => {
+    const self = callerFriend(ctx);
+    if (!/^[0-9a-f]{64}$/.test(tokenHash)) {
+      fail('tokenHash must be 64 lowercase hex characters (SHA-256)');
+    }
+    const row = { friendId: self.id, tokenHash, createdAt: ctx.timestamp };
+    if (ctx.db.ingestToken.friendId.find(self.id)) {
+      ctx.db.ingestToken.friendId.update(row);
+    } else {
+      ctx.db.ingestToken.insert(row);
+    }
+  }
+);
+
+export const clearIngestToken = spacetimedb.reducer(ctx => {
+  const self = callerFriend(ctx);
+  const row = ctx.db.ingestToken.friendId.find(self.id);
+  if (row) ctx.db.ingestToken.delete(row);
+});
+
 // --- Consent (friend-only) ---
 
 export const setConsent = spacetimedb.reducer(

@@ -43,7 +43,7 @@ Seeded friends: Maya (New York, runner, check-on-me on with Sam as trusted frien
 
 **Public** (any client can subscribe): `friend`, `friend_group`, `membership`, `photo`, `goal`, `checkin`, `feed_item` (the group chat), `reaction`, `plan`, `plan_option`, `plan_vote`.
 
-**Private** (owner/agent only): `invite`, `consent`, `friend_settings`, `nudge`, `stat`, `photo_location`, `free_block`, `agent_identity`.
+**Private** (owner/agent only): `invite`, `consent`, `friend_settings`, `nudge`, `stat`, `photo_location`, `free_block`, `ingest_token`, `agent_identity`.
 
 **Views** (each browser sees only its own rows): `my_friend`, `my_consent`, `my_settings`, `my_nudge_previews` (nudges about me, waiting for my approval), `my_nudge_inbox` (nudges for me).
 
@@ -54,6 +54,7 @@ Seeded friends: Maya (New York, runner, check-on-me on with Sam as trusted frien
 | `join_group(invite_code, name, city, timezone, avatar)` | friend | creates the friend, all consent off |
 | `claim_friend(claim_code)` | friend | binds a seeded friend to this browser |
 | `update_profile(name, city, timezone, avatar)` | friend | |
+| `set_ingest_token(token_hash)`, `clear_ingest_token()` | friend | SHA-256 hex of a token the browser makes with Web Crypto; the Shortcut and uploads send the token to the agent service |
 | `set_consent(source, share_level)` | friend | source: calendar, canvas, health, screen_time, photos; level: highlights, planning_only, off |
 | `set_friend_settings(roast_ok, check_on_me, trusted_friend_ids, nudge_preview)` | friend | at most 2 trusted friends, from your groups |
 | `send_message(group_id, text, reply_to_id)` | friend | chat message |
