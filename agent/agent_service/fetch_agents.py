@@ -31,6 +31,7 @@ from .coordinator import answer
 from .group import Friend, FriendUpdate, first_group_id, friend_update, group_friends
 from .llm import Llm
 from .stdb import StdbClient
+from .watcher import Watcher
 
 log = logging.getLogger(__name__)
 LOOKBACK = timedelta(days=7)
@@ -144,6 +145,16 @@ def coordinator_agent(
         reply = await answer(stdb, llm, current_group, updates, text)
         ctx.logger.info("Replied with %d characters", len(reply))
         await ctx.send(sender, ChatMessage(content=[TextContent(text=reply), EndSessionContent()]))
+
+    watcher = Watcher(stdb, llm)
+
+    @agent.on_interval(period=3.0)
+    async def watch(ctx: Context):
+        try:
+            await watcher.tick(lambda: gather(ctx))
+        except Exception:
+            # A bad poll (server restarting, network blip) shouldn't stop the loop.
+            ctx.logger.exception("Watcher poll failed")
 
     @chat.on_message(ChatAcknowledgement)
     async def on_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):

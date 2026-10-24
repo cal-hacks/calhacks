@@ -9,6 +9,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { GoalsPage } from "./pages/GoalsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { GroupPage } from "./pages/GroupPage";
 
 /**
  * Route guards:
@@ -32,6 +33,7 @@ export function App() {
       <Route path="/welcome" element={<Guard need="onboarding"><PermissionsPage /></Guard>} />
       <Route element={<Guard need="member"><Layout /></Guard>}>
         <Route index element={<DashboardPage />} />
+        <Route path="group" element={<GroupPage />} />
         <Route path="goals" element={<GoalsPage />} />
         <Route path="friends" element={<ConnectionsPage />} />
         <Route path="settings" element={<SettingsPage />} />

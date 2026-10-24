@@ -10,34 +10,46 @@ import { createDefaults, type Ctx } from './schema';
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 
+// Same people as the Orbit app's seed (web/src/lib/seed.ts). Riley is the
+// demo login; the others are the demo phones.
 const FRIENDS = [
+  {
+    key: 'riley',
+    name: 'Riley Demo',
+    city: 'Palo Alto, CA',
+    timezone: 'America/Los_Angeles',
+    offset: -7,
+    avatar: '📚',
+    consent: { health: 'highlights', calendar: 'highlights', canvas: 'planning_only', screen_time: 'highlights', photos: 'highlights' },
+    settings: { roastOk: false, checkOnMe: false, trusted: [], nudgePreview: true },
+  },
   {
     key: 'maya',
     name: 'Maya Chen',
-    city: 'New York',
-    timezone: 'America/New_York',
-    offset: -4,
+    city: 'Austin, TX',
+    timezone: 'America/Chicago',
+    offset: -5,
     avatar: '🏃‍♀️',
     consent: { health: 'highlights', calendar: 'highlights', canvas: 'planning_only', screen_time: 'off', photos: 'highlights' },
     settings: { roastOk: false, checkOnMe: true, trusted: ['sam'], nudgePreview: true },
   },
   {
     key: 'sam',
-    name: 'Sam Okafor',
-    city: 'Austin',
-    timezone: 'America/Chicago',
-    offset: -5,
+    name: 'Sam Lee',
+    city: 'Seattle, WA',
+    timezone: 'America/Los_Angeles',
+    offset: -7,
     avatar: '🦙',
     consent: { health: 'highlights', calendar: 'highlights', canvas: 'off', screen_time: 'highlights', photos: 'highlights' },
     settings: { roastOk: true, checkOnMe: false, trusted: [], nudgePreview: true },
   },
   {
     key: 'jordan',
-    name: 'Jordan Rivera',
-    city: 'San Francisco',
-    timezone: 'America/Los_Angeles',
-    offset: -7,
-    avatar: '📚',
+    name: 'Jordan Park',
+    city: 'New York, NY',
+    timezone: 'America/New_York',
+    offset: -4,
+    avatar: '⚖️',
     consent: { health: 'planning_only', calendar: 'highlights', canvas: 'highlights', screen_time: 'highlights', photos: 'off' },
     settings: { roastOk: false, checkOnMe: false, trusted: [], nudgePreview: true },
   },
@@ -47,6 +59,7 @@ type Key = (typeof FRIENDS)[number]['key'];
 
 export const DEMO_CODES = {
   group: 'CATCHUP',
+  riley: 'RILEY-1',
   maya: 'MAYA-1',
   sam: 'SAM-1',
   jordan: 'JORDAN-1',
@@ -121,12 +134,14 @@ export function seedDemo(ctx: Ctx) {
 
   // --- Last 7 days of stats ---
   const steps: Record<Key, number[]> = {
+    riley: [7200, 8100, 6500, 9300, 7800, 10200, 6900],
     maya: [11200, 9800, 14300, 8700, 12100, 15800, 10400],
     sam: [6400, 7100, 5200, 9900, 13400, 8800, 6000],
     jordan: [3900, 4200, 3100, 5600, 2800, 4100, 3500],
   };
   // [bedtime hour (may be past 24), hours slept]
   const sleep: Record<Key, [number, number][]> = {
+    riley: [[23.5, 7], [24, 6.75], [23.25, 7.5], [23.75, 7], [24.5, 7.25], [24, 8], [23.5, 7]],
     maya: [[22.5, 7.5], [23, 7], [22.75, 7.25], [23.25, 7], [22.5, 7.5], [23.5, 8], [22.75, 7.25]],
     sam: [[24.5, 7], [25, 6.5], [24.75, 7.25], [25.5, 6.5], [26, 7.5], [24, 8], [24.25, 7]],
     jordan: [[25.5, 5.5], [26, 5], [25.75, 5.25], [26.5, 5], [25, 6], [24.5, 7], [26, 5]],
@@ -153,16 +168,16 @@ export function seedDemo(ctx: Ctx) {
   ] as const) {
     addStat(k, 'screen_time', { daily_avg_hours: hours, top_apps: top, pickups: k === 'sam' ? 142 : 58 }, at(k, -1, 21));
   }
-  addStat('jordan', 'busy_week', { reason: 'deadlines', count: 4, through: localDate(now, -7, 3) }, at('jordan', -1, 12));
+  addStat('jordan', 'busy_week', { reason: 'deadlines', count: 4, through: localDate(now, -4, 3) }, at('jordan', -1, 12));
   addStat('jordan', 'canvas_deadlines', {
-    items: ['Thesis draft', 'Stats problem set', 'Lab report', 'Seminar reading response'],
+    items: ['Moot court brief', 'Contracts memo', 'Evidence reading', 'Clinic intake notes'],
   }, at('jordan', -1, 12));
 
   // --- Goals ---
   const goals: [Key, string, number, number][] = [
     ['maya', 'Run 4 times this week', 4, 3],
     ['sam', 'Read 2 books this month', 2, 1],
-    ['jordan', 'Finish thesis draft', 1, 0],
+    ['jordan', 'Finish moot court brief', 1, 0],
   ];
   for (const [k, description, target, progress] of goals) {
     ctx.db.goal.insert({ id: 0n, friendId: ids[k], description, target, progress, status: 'active' });
@@ -172,16 +187,16 @@ export function seedDemo(ctx: Ctx) {
   const llama = ctx.db.photo.insert({
     id: 0n,
     friendId: ids.sam,
-    placeName: 'Llama farm near Dripping Springs, TX',
+    placeName: 'Llama farm near Snohomish, WA',
     takenAt: ts(at('sam', -2, 14)),
     obscurityScore: 0.92,
     caption: 'Sam made a new friend. He is fluffier than all of us.',
   });
-  ctx.db.photoLocation.insert({ photoId: llama.id, lat: 30.19, lng: -98.09 });
+  ctx.db.photoLocation.insert({ photoId: llama.id, lat: 47.91, lng: -122.09 });
 
   // --- Check-ins ---
   ctx.db.checkin.insert({ id: 0n, friendId: ids.maya, text: 'longest run since college 🏃‍♀️', createdAt: ts(at('maya', -2, 8)), source: 'app' });
-  ctx.db.checkin.insert({ id: 0n, friendId: ids.jordan, text: 'surviving thesis week ☕', createdAt: ts(at('jordan', -1, 22)), source: 'app' });
+  ctx.db.checkin.insert({ id: 0n, friendId: ids.jordan, text: 'surviving brief week ☕', createdAt: ts(at('jordan', -1, 22)), source: 'app' });
 
   // --- Group chat history ---
   const post = (
@@ -209,7 +224,7 @@ export function seedDemo(ctx: Ctx) {
   post('maya', 'message', 'it’s not just you lol', 'friend', at('maya', -5, 23));
   const run = post('maya', 'highlight', 'Maya ran 8.1 km this morning, her longest run since college 🏃‍♀️ Anyone want to join her virtual 5K?', 'agent', at('maya', -2, 9), 0n, -2);
   post('sam', 'message', 'MAYA 👏👏', 'friend', at('sam', -2, 9.5), run.id);
-  const farm = post('sam', 'obscure_place', 'Weirdest place of the week: Sam at a llama farm outside Austin 🦙', 'agent', at('sam', -2, 16), 0n, -2);
+  const farm = post('sam', 'obscure_place', 'Weirdest place of the week: Sam at a llama farm outside Seattle 🦙', 'agent', at('sam', -2, 16), 0n, -2);
   post('jordan', 'message', 'I need context immediately', 'friend', at('jordan', -2, 15), farm.id);
   post('sam', 'roast', 'Screen Time champion of the week 📱👑 Sam, averaging 6.4 hours. A true dedication to the craft.', 'agent', at('sam', -1, 20), 0n, -1);
   post('sam', 'message', 'I will not be taking questions', 'friend', at('sam', -1, 20.5));

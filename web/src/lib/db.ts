@@ -8,7 +8,8 @@ import { seedDB } from "./seed";
 // this file and api.ts.
 
 const STORAGE_KEY = "orbit.db";
-const DB_VERSION = 1;
+// Bumped when the seed changes so old browsers pick up the new one.
+const DB_VERSION = 2;
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

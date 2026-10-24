@@ -1,7 +1,9 @@
 """Claude calls. Everything here returns None on failure so callers can fall
 back to plain text instead of breaking the chat."""
 
+import json
 import logging
+from typing import Any
 
 import anthropic
 
@@ -14,6 +16,22 @@ class Llm:
         self._client = anthropic.AsyncAnthropic(api_key=api_key) if api_key else None
 
     async def write(self, system: str, prompt: str, *, effort: str = "low") -> str | None:
+        return await self._create(system, prompt, {"effort": effort})
+
+    async def write_json(self, system: str, prompt: str, schema: dict[str, Any]) -> dict | None:
+        """A JSON object matching `schema` (structured outputs), or None."""
+        text = await self._create(
+            system, prompt, {"effort": "low", "format": {"type": "json_schema", "schema": schema}}
+        )
+        if text is None:
+            return None
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            log.warning("Claude returned invalid JSON; skipping")
+            return None
+
+    async def _create(self, system: str, prompt: str, output_config: dict[str, Any]) -> str | None:
         if self._client is None:
             return None
         try:
@@ -23,7 +41,7 @@ class Llm:
                 # On a policy decline the API retries on a fallback model.
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
-                output_config={"effort": effort},
+                output_config=output_config,
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
             )

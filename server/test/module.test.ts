@@ -14,6 +14,7 @@ const agent = auth('agent');
 const maya = auth('maya');
 const sam = auth('sam');
 const jordan = auth('jordan');
+const riley = auth('riley');
 const stranger = auth('stranger');
 
 const run = (who: TestAuth, fn: (ctx: any) => void) => h.withReducerTx(who, fn);
@@ -33,15 +34,16 @@ beforeEach(() => {
   run(maya, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.maya }));
   run(sam, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.sam }));
   run(jordan, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.jordan }));
-  ids = { Maya: friendId('Maya'), Sam: friendId('Sam'), Jordan: friendId('Jordan') };
+  run(riley, ctx => mod.claimFriend(ctx, { claimCode: DEMO_CODES.riley }));
+  ids = { Maya: friendId('Maya'), Sam: friendId('Sam'), Jordan: friendId('Jordan'), Riley: friendId('Riley') };
   gid = rows('friendGroup')[0].id;
 });
 
 describe('seed', () => {
   test('creates the demo world', () => {
-    expect(rows('friend')).toHaveLength(3);
-    expect(rows('membership')).toHaveLength(3);
-    expect(rows('consent')).toHaveLength(15);
+    expect(rows('friend')).toHaveLength(4);
+    expect(rows('membership')).toHaveLength(4);
+    expect(rows('consent')).toHaveLength(20);
     expect(rows('feedItem').length).toBeGreaterThan(5);
     expect(rows('freeBlock').length).toBeGreaterThan(5);
     expect(rows('stat').length).toBeGreaterThan(40);
@@ -52,7 +54,7 @@ describe('seed', () => {
     run(agent, ctx => mod.resetDemo(ctx, {}));
     expect(rows('friend')).toHaveLength(0);
     run(agent, ctx => mod.seedDemo(ctx, {}));
-    expect(rows('friend')).toHaveLength(3);
+    expect(rows('friend')).toHaveLength(4);
   });
 });
 
@@ -197,8 +199,10 @@ describe('plans', () => {
     expect(rows('planVote')).toHaveLength(1);
     run(sam, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }));
     expect(rows('plan')[0].status).toBe('open');
-    // Agent relays Jordan's vote from ASI:One.
+    // Agent relays Jordan's vote from ASI:One. 2 of 4 isn't a majority yet.
     run(agent, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: fid('Jordan') }));
+    expect(rows('plan')[0].status).toBe('open');
+    run(riley, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }));
     expect(rows('plan')[0]).toMatchObject({ status: 'confirmed', confirmedOptionId: options[0].id });
     expect(() => run(maya, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }))).toThrow(/confirmed/);
   });
