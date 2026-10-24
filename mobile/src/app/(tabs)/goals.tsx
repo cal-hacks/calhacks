@@ -22,6 +22,17 @@ export default function GoalsScreen() {
       subtitle="Set goals for the day, week, month or year. Your agent tracks them and can share wins with friends you choose."
       right={<Button small title="+ New" onPress={() => router.push("/goal/new")} />}
     >
+      <Pressable onPress={() => router.push("/agent")} accessibilityRole="button" style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+        <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Text style={{ fontSize: 22 }}>💬</Text>
+          <View style={{ flex: 1 }}>
+            <Txt bold>Just tell your agent</Txt>
+            <Txt small muted>“I studied 2 hours at the library” or “I want to run 3 times a week”</Txt>
+          </View>
+          <Txt muted style={{ fontSize: 20 }}>›</Txt>
+        </Card>
+      </Pressable>
+
       <View style={{ gap: 8 }}>
         <Eyebrow>Quick start</Eyebrow>
         <Chips>

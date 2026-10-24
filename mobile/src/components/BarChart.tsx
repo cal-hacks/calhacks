@@ -79,7 +79,15 @@ export function BarChart({ bars, title, unit, height = 190 }: { bars: Bar[]; tit
               })}
               {bars.map((b, i) =>
                 b.tick ? (
-                  <SvgText key={`x${b.key}`} x={pad.left + band * i + band / 2} y={height - 6} fontSize={10} fill={c.text2} textAnchor="middle">
+                  // The last tick sits at the right edge, so right-align it to stay inside the plot.
+                  <SvgText
+                    key={`x${b.key}`}
+                    x={i === bars.length - 1 ? width - pad.right : pad.left + band * i + band / 2}
+                    y={height - 6}
+                    fontSize={10}
+                    fill={c.text2}
+                    textAnchor={i === bars.length - 1 ? "end" : "middle"}
+                  >
                     {b.tick}
                   </SvgText>
                 ) : null,

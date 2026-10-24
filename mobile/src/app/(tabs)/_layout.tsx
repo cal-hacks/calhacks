@@ -28,6 +28,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Dashboard", tabBarIcon: icon("stats-chart") }} />
       <Tabs.Screen name="goals" options={{ title: "Goals", tabBarIcon: icon("flag") }} />
+      <Tabs.Screen name="agent" options={{ title: "Agent", tabBarIcon: icon("chatbubble-ellipses") }} />
       <Tabs.Screen name="friends" options={{ title: "Friends", tabBarIcon: icon("people"), tabBarBadge: pending || undefined }} />
       <Tabs.Screen name="settings" options={{ title: "Profile", tabBarIcon: icon("person-circle") }} />
     </Tabs>

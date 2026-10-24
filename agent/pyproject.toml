@@ -1,0 +1,14 @@
+[project]
+name = "orbit-agent"
+version = "0.1.0"
+description = "Orbit agent service: goal-coach chat endpoint backed by Claude"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=1.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-dotenv>=1.0",
+]
+
+[tool.uv]
+package = false

@@ -4,6 +4,18 @@ import { useDB } from "../lib/db";
 import { currentUser, permissionsOf, setCalendar, setPermissions } from "../lib/api";
 import { CALENDAR_PROVIDERS } from "../lib/meta";
 import { requestCalendarAccess, requestLocation, requestPhotos } from "../lib/integrations";
+import {
+  SELECTION_ID,
+  deviceActivity,
+  hasTrackedApps,
+  requestScreenTime,
+  screenTimeMinutesToday,
+  screenTimeNative,
+  screenTimeStatus,
+  startScreenTimeTracking,
+  syncScreenTimeGoals,
+  type ScreenTimeStatus,
+} from "../lib/screenTime";
 import type { ScreenTimeMethod } from "../lib/types";
 import { Button, Card, Pill, Row, Segmented, Txt } from "./ui";
 import { useColors } from "./theme";
@@ -94,18 +106,86 @@ export function PermissionCards() {
         </Row>
       </PermCard>
 
-      <PermCard icon="📱" title="Screen Time" on={perms.screenTime !== "off"} status={perms.screenTime === "off" ? "Off" : perms.screenTime === "shortcut" ? "Shortcut" : "Screenshots"} body="Apple keeps Screen Time private to apps. Use our iOS Shortcut, or share a screenshot and your agent reads the numbers.">
-        <Segmented<ScreenTimeMethod>
-          value={perms.screenTime}
-          options={[
-            { key: "shortcut", label: "Shortcut" },
-            { key: "screenshot", label: "Screenshots" },
-            { key: "off", label: "Off" },
-          ]}
-          onChange={(v) => setPermissions({ screenTime: v })}
-        />
-      </PermCard>
+      <ScreenTimeCard />
     </View>
+  );
+}
+
+function ScreenTimeCard() {
+  const db = useDB();
+  const me = currentUser(db)!;
+  const perms = permissionsOf(db, me.id);
+  const [status, setStatus] = useState<ScreenTimeStatus>(() => screenTimeStatus());
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const minutes = perms.screenTime === "apple" ? screenTimeMinutesToday() : null;
+  const Picker = picking ? deviceActivity()?.DeviceActivitySelectionSheetViewPersisted : undefined;
+
+  const onAllow = async () => {
+    setBusy(true);
+    try {
+      const s = await requestScreenTime();
+      setStatus(s);
+      if (s === "approved") setPicking(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPicked = async () => {
+    setPicking(false);
+    if (await startScreenTimeTracking()) {
+      setPermissions({ screenTime: "apple" });
+      syncScreenTimeGoals();
+    }
+  };
+
+  const on = perms.screenTime !== "off";
+  const statusText = { apple: "Apple Screen Time", shortcut: "Shortcut", screenshot: "Screenshots", off: "Off" }[perms.screenTime];
+
+  return (
+    <PermCard icon="📱" title="Screen Time" on={on} status={statusText} body="Counts time in the apps you choose, for goals like “screen time under 3h”. Friends never see app names or totals unless you share Screen Time with them.">
+      {screenTimeNative ? (
+        <View style={{ gap: 8 }}>
+          {perms.screenTime === "apple" && hasTrackedApps() ? (
+            <>
+              <Txt small>Today so far: {minutes === null ? "–" : minutes < 15 ? "under 15m" : `at least ${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}h ` : ""}${minutes % 60 ? `${minutes % 60}m` : ""}`}</Txt>
+              <Row wrap>
+                <Button small variant="secondary" title="Change apps" onPress={() => setPicking(true)} />
+                <Button small variant="ghost" title="Stop tracking" onPress={() => { deviceActivity()?.stopMonitoring(); setPermissions({ screenTime: "off" }); }} />
+              </Row>
+            </>
+          ) : status === "approved" ? (
+            <Button small title="Choose apps to count" onPress={() => setPicking(true)} style={{ alignSelf: "flex-start" }} />
+          ) : (
+            <Row wrap>
+              <Button small title="Allow Screen Time" loading={busy} onPress={onAllow} />
+              {status === "denied" && <Button small variant="secondary" title="Open Settings" onPress={() => Linking.openSettings()} />}
+            </Row>
+          )}
+          <Txt small muted>Uses Apple's Screen Time API. Apple shares time in steps (15 min at first), never what you did in an app.</Txt>
+          {Picker && (
+            <Picker
+              familyActivitySelectionId={SELECTION_ID}
+              style={{ width: 1, height: 1, position: "absolute" }}
+              onDismissRequest={onPicked}
+            />
+          )}
+        </View>
+      ) : (
+        <View style={{ gap: 8 }}>
+          <Segmented<ScreenTimeMethod>
+            value={perms.screenTime === "screenshot" ? "screenshot" : "off"}
+            options={[
+              { key: "screenshot", label: "Screenshots" },
+              { key: "off", label: "Off" },
+            ]}
+            onChange={(v) => setPermissions({ screenTime: v })}
+          />
+          <Txt small muted>Automatic tracking uses Apple Screen Time, which this build doesn't include. Run npm run ios:sim for the Simulator, or build with an Apple Developer team for a real iPhone.</Txt>
+        </View>
+      )}
+    </PermCard>
   );
 }
 
@@ -113,18 +193,15 @@ function PermCard({ icon, title, body, on, status, children }: { icon: string; t
   const c = useColors();
   return (
     <Card>
-      <Row gap={12} style={{ alignItems: "flex-start" }}>
+      <Row gap={12}>
         <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" }}>
           <Text style={{ fontSize: 20 }}>{icon}</Text>
         </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Row style={{ justifyContent: "space-between" }}>
-            <Txt bold style={{ fontSize: 16 }}>{title}</Txt>
-            <Pill on={on} text={status} />
-          </Row>
-          <Txt small muted>{body}</Txt>
-        </View>
+        <Txt bold style={{ fontSize: 16, flex: 1 }}>{title}</Txt>
+        <Pill on={on} text={status} />
       </Row>
+      {/* Full-width body: nesting it beside the icon made iOS mis-measure wrapped lines. */}
+      <Txt small muted>{body}</Txt>
       {children}
     </Card>
   );

@@ -213,6 +213,7 @@ export function deleteAccount() {
     sharing: db.sharing.filter((s) => s.ownerId !== id && s.friendId !== id),
     goals: db.goals.filter((g) => g.userId !== id),
     logs: db.logs.filter((l) => l.userId !== id),
+    chats: db.chats?.filter((c) => c.userId !== id),
     session: { userId: null },
   }));
 }
@@ -369,13 +370,27 @@ export function deleteGoal(id: Id) {
   }));
 }
 
-export function logProgress(goalId: Id, amount: number, date = today(), note?: string) {
+export function logProgress(goalId: Id, amount: number, date = today(), note?: string): GoalLog {
   const me = requireUser().id;
   const goal = getDB().goals.find((g) => g.id === goalId);
   if (!goal) throw new ApiError("Goal not found.");
   if (!(amount > 0)) throw new ApiError("Enter an amount above zero.");
   const entry: GoalLog = { id: newId("l"), goalId, userId: me, amount, date, source: "manual", note, createdAt: Date.now() };
   mutate((db) => ({ ...db, logs: [...db.logs, entry] }));
+  return entry;
+}
+
+/**
+ * Set (not add) the amount an automatic source measured for a day, e.g. Screen
+ * Time minutes so far today. Replaces that source's earlier reading for the day.
+ */
+export function setTrackedAmount(goalId: Id, date: string, amount: number, source: GoalLog["source"]) {
+  const me = requireUser().id;
+  mutate((db) => {
+    const others = db.logs.filter((l) => !(l.goalId === goalId && l.date === date && l.source === source));
+    const entry: GoalLog = { id: newId("l"), goalId, userId: me, amount, date, source, createdAt: Date.now() };
+    return { ...db, logs: [...others, entry] };
+  });
 }
 
 export function loadSampleData() {

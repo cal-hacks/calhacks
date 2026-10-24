@@ -36,7 +36,7 @@ export interface User {
 
 export type CalendarProvider = "google" | "outlook" | "apple";
 export type PermissionState = "granted" | "denied" | "off";
-export type ScreenTimeMethod = "shortcut" | "screenshot" | "off";
+export type ScreenTimeMethod = "apple" | "shortcut" | "screenshot" | "off";
 
 export interface Permissions {
   userId: Id;
@@ -115,6 +115,25 @@ export interface GoalLog {
   createdAt: number;
 }
 
+/** One item in the agent chat as shown in the UI. */
+export interface ChatItem {
+  id: Id;
+  role: "user" | "assistant" | "action" | "error";
+  text: string;
+  createdAt: number;
+}
+
+/**
+ * Agent conversation for one user. `api` holds the exact Messages API history
+ * (content blocks, including thinking blocks, passed back unchanged), and
+ * `items` is the readable transcript derived as the conversation happens.
+ */
+export interface Chat {
+  userId: Id;
+  api: { role: "user" | "assistant"; content: unknown[] }[];
+  items: ChatItem[];
+}
+
 export interface DB {
   users: User[];
   permissions: Permissions[];
@@ -122,6 +141,7 @@ export interface DB {
   sharing: SharingPrefs[];
   goals: Goal[];
   logs: GoalLog[];
+  chats?: Chat[];
   session: { userId: Id | null };
   version: number;
 }

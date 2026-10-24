@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { ActivityIndicator, View, useColorScheme } from "react-native";
+import { ActivityIndicator, AppState, View, useColorScheme } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { hydrate, useDB, useHydrated } from "../lib/db";
 import { currentUser } from "../lib/api";
+import { syncScreenTimeGoals } from "../lib/screenTime";
 import { useColors } from "../components/theme";
 
 export default function RootLayout() {
@@ -13,7 +14,12 @@ export default function RootLayout() {
   const scheme = useColorScheme();
 
   useEffect(() => {
-    hydrate();
+    hydrate().then(syncScreenTimeGoals);
+    // Screen Time events accrue in the background; pick them up on return.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncScreenTimeGoals();
+    });
+    return () => sub.remove();
   }, []);
 
   if (!ready) {

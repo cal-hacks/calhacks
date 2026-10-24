@@ -25,6 +25,7 @@ Demo account: `demo` / `demo1234`.
 | `welcome.tsx` | Permissions, shown once after sign-up: calendars, location, photos, Screen Time |
 | `(tabs)/index.tsx` | Dashboard: study hours, goals met per cadence, streaks, history |
 | `(tabs)/goals.tsx`, `goal/[id].tsx` | Goals list, create/edit modal, manual logging |
+| `(tabs)/agent.tsx` | Chat with the agent to set goals and log progress (needs `agent/` running) |
 | `(tabs)/friends.tsx`, `friend/[id].tsx` | Requests, search, link contacts; per-friend frequency + what to share |
 | `(tabs)/settings.tsx` | Profile friends see, connected data, password, log out, delete account |
 
@@ -46,8 +47,42 @@ Already handled for review: a purpose string for every permission, Sign in with
 Apple alongside Google (Guideline 4.8), in-app account deletion (5.1.1(v)),
 and `ITSAppUsesNonExemptEncryption: false`.
 
+## Agent chat
+
+Start the agent service (`agent/README.md`). The Simulator uses
+`http://localhost:8000` by default; on a phone set `EXPO_PUBLIC_AGENT_API_URL`.
+
+## Apple Screen Time
+
+Uses Apple's Screen Time API (FamilyControls + DeviceActivity) through
+`react-native-device-activity`. Apple never gives apps raw usage numbers, so the
+app schedules "reached N minutes" events over the apps the user picks, and a
+background extension records which ones fired. The highest one today becomes
+the reading for Screen Time goals (15-minute steps up to 4h, coarser after).
+
+**Simulator, no Apple Developer account:** `npm run ios:sim`. The Simulator
+accepts locally signed apps, so the build embeds the Family Controls
+entitlement with a placeholder team ID (`mobile/.env`). Apple's real Screen
+Time permission prompt and app picker work there. The Simulator records little
+real app usage, so expect few threshold events.
+
+Physical iPhone and App Store requirements, all from Apple:
+- **A paid Apple Developer team.** Build with `APPLE_TEAM_ID=<team id>`, then
+  `npx expo prebuild --clean` and `npx expo run:ios --device` on a real iPhone.
+  This adds three extensions (`ActivityMonitorExtension`, `ShieldAction`,
+  `ShieldConfiguration`) and the `group.com.orbitfriends.app` App Group.
+- **A real iPhone on iOS 16+.** Screen Time authorization doesn't work in the Simulator.
+- **For the App Store / TestFlight:** request the Family Controls (Distribution)
+  entitlement at https://developer.apple.com/contact/request/family-controls-distribution
+  for the app and each extension's bundle ID. Approval can take weeks; until
+  then only local development builds work.
+
+Without `APPLE_TEAM_ID`, the Screen Time card offers the screenshot option instead.
+
 ## Env (`.env`, see `.env.example`)
 
 - `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` / `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`: real
   Google sign-in. Requires a rebuild (`npx expo prebuild --clean && npx expo run:ios`).
   Without them, Google runs a demo flow.
+- `EXPO_PUBLIC_AGENT_API_URL`, `EXPO_PUBLIC_AGENT_KEY`: agent service URL and optional shared secret.
+- `APPLE_TEAM_ID` (build-time): turns on Apple Screen Time.
