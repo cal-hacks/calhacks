@@ -246,3 +246,4 @@ async def test_canvas_refresh_only_when_stale(tmp_path):
     store = CanvasStore(tmp_path / "c.json")
     store.put(1, CanvasLogin("https://canvas.school.edu", "t", synced_at=datetime.now(UTC).isoformat()))
     assert await canvas.refresh_due(None, None, store) == {}
+

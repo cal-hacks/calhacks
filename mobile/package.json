@@ -6,12 +6,15 @@
     "start": "expo start --dev-client",
     "ios": "expo run:ios",
     "android": "expo run:android",
+    "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "doctor": "npx expo-doctor",
     "ios:sim": "./scripts/ios-sim.sh"
   },
   "dependencies": {
     "@expo-google-fonts/patrick-hand": "^0.4.1",
+    "@expo/metro-runtime": "~6.1.2",
+    "@kingstinct/react-native-healthkit": "^16.2.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
     "@react-navigation/bottom-tabs": "^7.21.0",
@@ -36,16 +39,21 @@
     "expo-status-bar": "~3.0.9",
     "expo-system-ui": "~6.0.9",
     "expo-web-browser": "~15.0.11",
+    "fast-text-encoding": "^1.0.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-device-activity": "^0.6.1",
+    "react-native-nitro-modules": "^0.37.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
+    "react-native-url-polyfill": "^4.0.0",
+    "react-native-web": "^0.21.0",
     "spacetimedb": "^2.13.0"
   },
   "devDependencies": {
+    "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "~19.1.0",
     "typescript": "~5.9.2"
   },

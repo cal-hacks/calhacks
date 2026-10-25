@@ -75,6 +75,7 @@ function Routes() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="goal/[id]" options={{ presentation: "modal", headerShown: true, title: "Goal" }} />
         <Stack.Screen name="friend/[id]" options={{ headerShown: true, title: "", headerBackTitle: "Friends" }} />
+        <Stack.Screen name="share" options={{ headerShown: true, title: "Share with your agent", headerBackTitle: "Back" }} />
       </Stack.Protected>
     </Stack>
   );

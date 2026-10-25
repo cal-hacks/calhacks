@@ -264,3 +264,4 @@ async def ingest_photo(body: PhotoIn, friend_id: Friend, request: Request):
     except ReducerRejected as e:
         raise rejected(e) from e
     return {"place_name": place, "obscurity_score": score, "caption": caption}
+

@@ -67,9 +67,12 @@ async def propose(stdb: StdbClient, group_id: int, updates: list[FriendUpdate]) 
     after = [w for w in windows if last_busy is None or w[0].date() > last_busy]
     picked = (after or windows)[:3]
     note = ""
+    unknown = [u.friend.name.split()[0] for u in updates if not u.free_blocks]
+    if unknown:
+        note += f"; {' and '.join(unknown)} not sharing a calendar"
     if busy and after:
         names = " and ".join(f.name.split()[0] for f, _ in busy)
-        note = f"; after {names}'s deadlines"
+        note += f"; after {names}'s deadlines"
     options = [
         {
             "label": f"Video call · {format_time(start, friends)}",

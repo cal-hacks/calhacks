@@ -111,6 +111,8 @@ export function sampleGoalsFor(userId: Id, seed = 42): { goals: Goal[]; logs: Go
 
 export function seedDB(version: number): DB {
   const demoSalt = "demo-salt";
+  // Maya, Jordan and Sam can log in too (same password) so each demo phone is a different friend.
+  const demoLogin = { salt: demoSalt, passwordHash: hashPassword(DEMO_PASSWORD, demoSalt) };
   const users: User[] = [
     seedUser({
       id: "u_demo",
@@ -124,9 +126,9 @@ export function seedDB(version: number): DB {
       salt: demoSalt,
       isSeed: false,
     }),
-    seedUser({ id: "u_maya", username: "maya_runs", displayName: "Maya Chen", email: "maya@example.com", phone: "+15125550101", city: "Austin, TX", timezone: "America/Chicago", bio: "Training for my first half marathon.", avatar: { emoji: "🏃‍♀️", color: "#eb6834" } }),
-    seedUser({ id: "u_jordan", username: "jordanp", displayName: "Jordan Park", email: "jordan@example.com", phone: "+12125550102", city: "New York, NY", timezone: "America/New_York", bio: "Law school survivor. Coffee-powered.", avatar: { emoji: "⚖️", color: "#6250d6" } }),
-    seedUser({ id: "u_sam", username: "sam_l", displayName: "Sam Lee", email: "sam@example.com", phone: "+12065550103", city: "Seattle, WA", bio: "Finds the weirdest places on weekends.", avatar: { emoji: "🦙", color: "#1baf7a" } }),
+    seedUser({ ...demoLogin, id: "u_maya", username: "maya_runs", displayName: "Maya Chen", email: "maya@example.com", phone: "+15125550101", city: "Austin, TX", timezone: "America/Chicago", bio: "Training for my first half marathon.", avatar: { emoji: "🏃‍♀️", color: "#eb6834" } }),
+    seedUser({ ...demoLogin, id: "u_jordan", username: "jordanp", displayName: "Jordan Park", email: "jordan@example.com", phone: "+12125550102", city: "New York, NY", timezone: "America/New_York", bio: "Law school survivor. Coffee-powered.", avatar: { emoji: "⚖️", color: "#6250d6" } }),
+    seedUser({ ...demoLogin, id: "u_sam", username: "sam_l", displayName: "Sam Lee", email: "sam@example.com", phone: "+12065550103", city: "Seattle, WA", bio: "Finds the weirdest places on weekends.", avatar: { emoji: "🦙", color: "#1baf7a" } }),
     seedUser({ id: "u_priya", username: "priya.k", displayName: "Priya Kumar", email: "priya@example.com", phone: "+13125550104", city: "Chicago, IL", timezone: "America/Chicago", bio: "Med school, year 2.", avatar: { emoji: "🩺", color: "#e34948" } }),
     seedUser({ id: "u_alex", username: "alexr", displayName: "Alex Rivera", email: "alex@example.com", phone: "+16175550105", city: "Boston, MA", timezone: "America/New_York", bio: "Climbing, cooking, consulting.", avatar: { emoji: "🧗", color: "#008300" } }),
   ];

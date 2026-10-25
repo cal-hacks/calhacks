@@ -3,13 +3,13 @@ import { createGoal, currentUser, logProgress, updateGoal } from "./api";
 import { WINDOW, currentProgress, formatAmount, hitRate, streak, studyHoursBetween } from "./goals";
 import { PERIOD_NOUN, periodEnd, periodStart, today } from "./dates";
 import type { Chat, ChatItem, Goal, GoalCategory, GoalPeriod, Id, TrackingSource } from "./types";
+import { AGENT_URL } from "./agentApi";
 
 // Client side of the agent chat. The agent service (agent/app/main.py) holds
 // the Anthropic key and the tool definitions; this file runs the tool loop,
 // executing each tool against on-device data. Tool names and fields must
 // match agent/app/tools.py.
 
-const AGENT_URL = process.env.EXPO_PUBLIC_AGENT_API_URL ?? (__DEV__ ? "http://localhost:8000" : undefined);
 const AGENT_KEY = process.env.EXPO_PUBLIC_AGENT_KEY;
 const MAX_TOOL_ROUNDS = 8;
 

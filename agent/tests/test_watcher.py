@@ -26,6 +26,7 @@ class FakeDb:
             "goal": [{"id": 3, "friend_id": 2, "description": "Read 2 books", "status": "active"}],
             "feed_item": [{"id": 50, "group_id": 7, "friend_id": 1, "text": "hey", "kind": "message"}],
             "plan": [],
+            "friend_group": [{"id": 7}],
             "stat": [{"id": 100, "friend_id": 1, "type": "steps", "value": '{"count": 4000}', "source": "seed"}],
             "photo": [],
             "consent": [
@@ -150,15 +151,21 @@ async def test_catch_up_message_proposes_plan():
     assert json.loads(args["options"])[0]["startsAt"] == start.isoformat()
 
 
-async def test_reset_restarts_from_new_ids():
+async def test_reseed_is_not_news():
     db, w = setup()
     await w.tick(no_updates)
-    db.tables["checkin"] = [{"id": 2, "friend_id": 1, "text": "seeded again", "source": "app"}]
+    # reset_demo + seed_demo: a new group, and the seeded history gets higher ids.
+    db.tables["friend_group"] = [{"id": 8}]
+    db.tables["checkin"] = [{"id": 20, "friend_id": 1, "text": "seeded again", "source": "app"}]
+    db.tables["feed_item"] = [{"id": 90, "group_id": 8, "friend_id": 1, "text": "we should catch up", "kind": "message"}]
     await w.tick(no_updates)
-    assert db.calls == [] and not w.primed
+    assert db.calls == []
+    assert (w.last_checkin, w.last_message) == (20, 90)
+    # Real news after the reseed is still picked up.
+    db.tables["checkin"].append({"id": 21, "friend_id": 1, "text": "ran a 10K", "source": "app"})
+    db.tables["membership"] = [{"friend_id": 1, "group_id": 8}]
     await w.tick(no_updates)
-    assert w.last_checkin == 2 and db.calls == []
-
+    assert len(db.calls) == 1
 
 def stat(db, id, friend_id, type, value, source="shortcut"):
     db.tables["stat"].append({"id": id, "friend_id": friend_id, "type": type, "value": json.dumps(value), "source": source})

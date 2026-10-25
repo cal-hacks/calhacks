@@ -1,7 +1,12 @@
+import { useEffect } from "react";
+import { AppState } from "react-native";
 import { Tabs } from "expo-router";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useDB } from "../../lib/db";
 import { currentUser } from "../../lib/api";
+import { connectAs, syncGoals, syncProfile, useLive } from "../../lib/live";
+import { syncBusyTimes } from "../../lib/agentApi";
+import { syncHealth } from "../../lib/health";
 import { FONT, useColors, waggle } from "../../components/theme";
 
 // Ink stroke icons, filled honey when their tab is active.
@@ -10,6 +15,12 @@ const stroke = { stroke: waggle.ink, strokeWidth: 2, strokeLinecap: "round" as c
 const fill = (on: boolean) => (on ? waggle.honey : "none");
 
 const ICONS: Record<string, (p: IconProps) => React.ReactElement> = {
+  group: ({ focused, size }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" {...stroke}>
+      <Path d="M3 5h12v8H8l-4 3z" fill={fill(focused)} />
+      <Path d="M18 9h3v8l-3-2.5h-6V13" />
+    </Svg>
+  ),
   index: ({ focused, size }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" {...stroke}>
       <Path d="M4 20h16" />
@@ -55,6 +66,33 @@ export default function TabsLayout() {
   const c = useColors();
   const me = currentUser(db);
   const pending = me ? db.connections.filter((x) => x.toId === me.id && x.status === "pending").length : 0;
+  const live = useLive();
+  const calendarOn = live.myConsent.some((r) => r.source === "calendar" && r.shareLevel !== "off");
+  const healthOn = live.myConsent.some((r) => r.source === "health" && r.shareLevel !== "off");
+
+  // Join the live group as this account, then push what friends should see.
+  useEffect(() => {
+    if (me) connectAs(me);
+  }, [me?.id]);
+  useEffect(() => {
+    if (!me || live.status !== "ready") return;
+    syncProfile(me);
+    syncGoals(me.id, db.goals, db.logs);
+    // Once per connection; later changes are pushed by api.ts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.status, me?.id]);
+  // Busy times from the phone's calendars and today's Apple Health data, now
+  // and whenever the app comes back to the foreground.
+  useEffect(() => {
+    if (live.status !== "ready" || (!calendarOn && !healthOn)) return;
+    const sync = () => {
+      if (calendarOn) syncBusyTimes().catch(() => {});
+      if (healthOn) syncHealth().catch(() => {});
+    };
+    sync();
+    const sub = AppState.addEventListener("change", (state) => state === "active" && sync());
+    return () => sub.remove();
+  }, [live.status, calendarOn, healthOn]);
 
   return (
     <Tabs
@@ -67,6 +105,7 @@ export default function TabsLayout() {
         tabBarBadgeStyle: { backgroundColor: c.surface, color: c.text, borderWidth: 2, borderColor: c.border, fontFamily: FONT, fontSize: 12, lineHeight: 15 },
       }}
     >
+      <Tabs.Screen name="group" options={{ title: "Group", tabBarIcon: icon("group") }} />
       <Tabs.Screen name="index" options={{ title: "Dashboard", tabBarIcon: icon("index") }} />
       <Tabs.Screen name="goals" options={{ title: "Goals", tabBarIcon: icon("goals") }} />
       <Tabs.Screen name="agent" options={{ title: "Agent", tabBarIcon: icon("agent") }} />

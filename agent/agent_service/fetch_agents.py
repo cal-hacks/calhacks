@@ -133,6 +133,14 @@ def coordinator_agent(
                 updates.append(from_reply(reply))
             else:
                 ctx.logger.warning("No update from a friend agent: %s", status)
+        # Friends who joined after startup have no agent until the next restart;
+        # read their shared updates directly so they still count.
+        group = await first_group_id(stdb)
+        if group is not None:
+            have = {u.friend.id for u in updates}
+            for friend in await group_friends(stdb, group):
+                if friend.id not in have:
+                    updates.append(await friend_update(stdb, friend, datetime.fromisoformat(since)))
         return updates
 
     @chat.on_message(ChatMessage)

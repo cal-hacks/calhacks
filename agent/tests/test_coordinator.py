@@ -33,8 +33,10 @@ def test_common_windows_one_per_day_and_limit():
     assert common_free_windows(updates) == [(at(d, 18), at(d, 22)) for d in range(3)]
 
 
-def test_no_windows_when_someone_has_no_free_time():
-    assert common_free_windows([FriendUpdate(MAYA, free_blocks=[(at(0, 1), at(0, 5))]), FriendUpdate(SAM)]) == []
+def test_friends_without_calendar_data_dont_block_a_plan():
+    block = [(at(0, 1), at(0, 5))]
+    assert common_free_windows([FriendUpdate(MAYA, free_blocks=block), FriendUpdate(SAM)]) == block
+    assert common_free_windows([FriendUpdate(MAYA), FriendUpdate(SAM)]) == []
 
 
 def test_format_time_lists_each_zone_once():
