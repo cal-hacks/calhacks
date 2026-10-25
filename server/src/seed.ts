@@ -1,6 +1,8 @@
 // Demo data for the social connection story: the Class of '25 group chat that
-// died after graduation, brought back by everyone's agents. Times are relative
-// to when seed_demo runs, so the data always looks like "this week".
+// died after graduation, brought back live by everyone's agents. The seed only
+// sets the scene (a few messages, what agents know, free time, goals); posts,
+// replies, plans and votes happen during the demo. Times are relative to when
+// seed_demo runs, so the data always looks like "this week".
 //
 // The cast:
 // - Riley (the demo login, San Francisco) and Priya (Berkeley) live ~10 miles
@@ -11,7 +13,8 @@
 // - Jordan (New York) has a heavy Canvas week, so plans land after it.
 // - Alex (Boston) isn't connected yet and has asked to be Riley's friend.
 // Nobody claims Sam, Jordan, Priya or Alex, so they accept friend requests at
-// once and say hi (cast.ts), which is what a judge who signs up experiences.
+// once and say hi (cast.ts); the agent service's cast director gives them a
+// voice in chats, which is what a judge who signs up experiences.
 //
 // UTC offsets are fixed (daylight time, valid until Nov 1, 2026). The agent
 // service uses real time-zone math; this is only for seed rows.
@@ -196,11 +199,7 @@ export function seedDemo(ctx: Ctx) {
   });
   ctx.db.photoLocation.insert({ photoId: llama.id, lat: 47.91, lng: -122.09 });
 
-  // --- Check-ins (each became an agent post below) ---
-  ctx.db.checkin.insert({ id: 0n, friendId: ids.maya, text: 'longest run since college 🏃‍♀️', createdAt: ts(at('maya', -8, 8)), source: 'app' });
-  ctx.db.checkin.insert({ id: 0n, friendId: ids.jordan, text: 'surviving brief week ☕', createdAt: ts(at('jordan', -2, 22)), source: 'app' });
-
-  // --- Chats ---
+  // --- Chats: just enough to set the scene; everything else happens live ---
   const chatWith = (a: Key, b: Key) => {
     for (const m of ctx.db.membership.friendId.filter(ids[a])) {
       const g = ctx.db.friendGroup.id.find(m.groupId);
@@ -208,81 +207,27 @@ export function seedDemo(ctx: Ctx) {
     }
     throw new Error(`no 1:1 for ${a} and ${b}`);
   };
-  const post = (
-    chat: bigint,
-    k: Key | null,
-    kind: string,
-    text: string,
-    createdBy: 'agent' | 'friend',
-    ms: number,
-    replyToId = 0n,
-    daysFromToday?: number
-  ) =>
+  const say = (chat: bigint, k: Key, text: string, ms: number) =>
     ctx.db.feedItem.insert({
       id: 0n,
       groupId: chat,
-      friendId: k ? ids[k] : 0n,
-      kind,
+      friendId: ids[k],
+      kind: 'message',
       text,
-      createdBy,
-      replyToId,
+      createdBy: 'friend',
+      replyToId: 0n,
       createdAt: ts(ms),
-      localDate: k && daysFromToday !== undefined ? localDate(now, offsetOf(k), daysFromToday) : '',
+      localDate: '',
     });
-  const g = group.id;
-  const say = (k: Key, text: string, ms: number, replyTo = 0n) => post(g, k, 'message', text, 'friend', ms, replyTo);
-  const react = (item: { id: bigint }, who: Key[], emoji: string) =>
-    who.forEach(k => ctx.db.reaction.insert({ id: 0n, feedItemId: item.id, friendId: ids[k], emoji }));
 
-  // The group chat: dead since graduation, revived by everyone's agents.
-  say('jordan', 'is it just me or has this chat been dead since graduation 💀', at('jordan', -10, 21));
-  say('maya', 'it’s not just you lol', at('maya', -10, 22));
-  const rule = say('riley', 'ok new rule: we are NOT letting this chat die. I got us all on Waggle 🐝', at('riley', -9, 20));
-  react(rule, ['priya', 'maya'], '❤️');
-  const run = post(g, 'maya', 'highlight', 'Maya just ran her longest run since college 🏃‍♀️ Anyone want to join her for a virtual 5K?', 'agent', at('maya', -8, 9), 0n, -8);
-  say('sam', 'MAYA 👏👏', at('sam', -8, 9.5), run.id);
-  react(run, ['riley', 'sam', 'priya'], '🎉');
-
-  // Last week's catch-up call: proposed, voted, confirmed.
-  const planAt = ts(at('riley', -7, 19));
-  const plan = ctx.db.plan.insert({ id: 0n, groupId: g, title: 'Catch-up call 📞', status: 'open', confirmedOptionId: 0n, createdAt: planAt });
-  const day = (d: number) => WEEKDAYS[new Date(localMidnight(now, -7, d) - 7 * HOUR).getUTCDay()];
-  const optA = ctx.db.planOption.insert({ id: 0n, planId: plan.id, label: `📞 Video call · ${day(-5)} 6 PM PT / 9 PM ET`, detail: 'Everyone’s free for 2h+', startsAt: ts(at('riley', -5, 18)) });
-  ctx.db.planOption.insert({ id: 0n, planId: plan.id, label: `📞 Video call · ${day(-4)} 7 PM PT / 10 PM ET`, detail: 'Everyone’s free for 1h+', startsAt: ts(at('riley', -4, 19)) });
-  for (const k of ['riley', 'priya', 'maya', 'sam'] as const) {
-    ctx.db.planVote.insert({ id: 0n, planId: plan.id, friendId: ids[k], optionId: optA.id });
-  }
-  ctx.db.plan.id.update({ ...plan, status: 'confirmed', confirmedOptionId: optA.id });
-  ctx.db.feedItem.insert({ id: 0n, groupId: g, friendId: 0n, kind: 'plan_proposal', text: plan.title, createdBy: 'agent', replyToId: 0n, createdAt: planAt, localDate: '' });
-  const call = say('riley', 'that call was so needed 🥹 same time next month?', at('riley', -5, 21));
-  react(call, ['priya', 'maya', 'jordan'], '❤️');
-
-  say('priya', 'update: I officially moved to Berkeley for my PhD 🐻 Riley we’re like 20 min apart now', at('priya', -5, 12));
-  say('riley', 'WAIT. we are hanging out asap', at('riley', -5, 12.5));
-  const farm = post(g, 'sam', 'obscure_place', 'Weirdest place of the week: Sam at a llama farm outside Seattle 🦙', 'agent', at('sam', -3, 16), 0n, -3);
-  say('jordan', 'I need context immediately', at('jordan', -3, 19.25), farm.id);
-  say('sam', 'his name is Gerald and he is my best friend now', at('sam', -3, 16.5), farm.id);
-  react(farm, ['riley', 'priya', 'maya', 'jordan'], '😂');
-  const brief = post(g, 'jordan', 'highlight', 'Jordan is deep in moot court prep this week ⚖️ Send snacks (or memes).', 'agent', at('jordan', -2, 22.5), 0n, -2);
-  say('maya', 'sending you strength 💪 you got this', at('maya', -2, 22), brief.id);
-  const roast = post(g, 'sam', 'roast', 'Screen Time champion of the week 📱👑 Sam, averaging 6.4 hours a day. A true dedication to the craft.', 'agent', at('sam', -1, 20), 0n, -1);
-  say('sam', 'I will not be taking questions', at('sam', -1, 20.5), roast.id);
-  react(roast, ['riley', 'maya', 'priya', 'jordan'], '😂');
-  say('maya', 'ok I need a watch party, what is everyone watching rn', at('maya', -1, 21));
-  say('priya', 'also has anyone played Gartic Phone?? my lab is obsessed', at('priya', -1, 19.5));
-  say('jordan', 'free after Wednesday, brief is due then 🙏', at('jordan', -1, 23));
-
-  // 1:1s, so the chat list looks lived in.
+  // The group chat died after graduation...
+  say(group.id, 'jordan', 'is it just me or has this chat been dead since graduation 💀', at('jordan', -10, 21));
+  say(group.id, 'maya', 'it’s not just you lol', at('maya', -10, 22));
+  say(group.id, 'priya', 'update: I moved to Berkeley for my PhD 🐻 Riley we’re like 20 min apart now', at('priya', -2, 12));
+  // ...and Priya and Riley keep meaning to hang out.
   const rp = chatWith('riley', 'priya');
-  post(rp, 'priya', 'message', 'you’re in SF right?? we NEED to hang now that I’m close', 'friend', at('priya', -5, 13));
-  post(rp, 'riley', 'message', 'yes!! I’ll find us something fun this weekend', 'friend', at('riley', -5, 13.5));
-  post(rp, 'priya', 'message', 'deal 🤝', 'friend', at('priya', -5, 14));
-  const rm = chatWith('riley', 'maya');
-  post(rm, 'riley', 'message', 'proud of you for that run!!', 'friend', at('riley', -8, 10));
-  post(rm, 'maya', 'message', 'thank youuu one more this week and I hit my goal 😤', 'friend', at('maya', -1, 8));
-  const rs = chatWith('riley', 'sam');
-  post(rs, 'riley', 'message', 'a LLAMA farm??', 'friend', at('riley', -3, 17));
-  post(rs, 'sam', 'message', 'his name is Gerald 🦙', 'friend', at('sam', -3, 17.25));
+  say(rp, 'priya', 'you’re in SF right?? we NEED to hang now that I’m close', at('priya', -2, 13));
+  say(rp, 'riley', 'yes!! I’ll find us something fun', at('riley', -2, 13.5));
 
   // --- Free time for the next 7 days (Calendar free/busy) ---
   for (const f of FRIENDS) {
@@ -325,6 +270,7 @@ const RESETTABLE = [
   'plan',
   'planOption',
   'planVote',
+  'agentEvent',
 ] as const;
 
 export function resetAll(ctx: Ctx) {

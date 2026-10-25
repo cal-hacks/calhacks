@@ -264,6 +264,23 @@ export const planVote = table(
   }
 );
 
+// What the agents are doing, for the Agent Network screen: who asked whom
+// for what, what was shared or kept private, searches, posts, votes. Labels
+// only, never raw data, so it's public. Written only by the agent service.
+export const agentEvent = table(
+  { public: true },
+  {
+    id: id(),
+    kind: t.string(), // trigger | request | reply | think | search | post | vote | react | say
+    actorFriendId: t.u64(), // whose agent acted; 0 for the coordinator
+    targetFriendId: t.u64(), // whose agent it was sent to; 0 for none
+    groupId: t.u64(), // the chat it's about; 0 for none
+    text: t.string(), // one readable line
+    detail: t.string(), // optional second line ('' if none)
+    createdAt: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema({
   friend,
   friendship,
@@ -286,6 +303,7 @@ const spacetimedb = schema({
   plan,
   planOption,
   planVote,
+  agentEvent,
 });
 
 export default spacetimedb;

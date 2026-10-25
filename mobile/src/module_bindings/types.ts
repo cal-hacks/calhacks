@@ -10,6 +10,18 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const AgentEvent = __t.object("AgentEvent", {
+  id: __t.u64(),
+  kind: __t.string(),
+  actorFriendId: __t.u64(),
+  targetFriendId: __t.u64(),
+  groupId: __t.u64(),
+  text: __t.string(),
+  detail: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type AgentEvent = __Infer<typeof AgentEvent>;
+
 export const AgentIdentity = __t.object("AgentIdentity", {
   identity: __t.identity(),
 });

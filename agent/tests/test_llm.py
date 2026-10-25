@@ -59,7 +59,7 @@ async def test_search_json_resumes_a_paused_turn_and_reads_the_final_text():
     ])
     assert await llm.search_json("system", "plan something") == {"title": "Movie night 🎬", "options": []}
     first, second = requests
-    assert first["tools"] == [{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}]
+    assert first["tools"] == [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
     assert "output_config" in first and "format" not in first["output_config"]
     # The paused turn goes back as is, with no extra "continue" message.
     assert [m["role"] for m in second["messages"]] == ["user", "assistant"]
@@ -72,3 +72,18 @@ async def test_search_json_returns_none_on_failure():
     llm, _ = fake_llm([message([{"type": "text", "text": "Sorry, no ideas."}])])
     assert await llm.search_json("system", "plan something") is None
     assert await Llm("").search_json("system", "plan something") is None
+
+
+async def test_search_json_gives_up_after_the_timeout():
+    llm = Llm("")
+
+    class Slow:
+        class beta:
+            class messages:
+                @staticmethod
+                async def create(**_):
+                    import asyncio
+                    await asyncio.sleep(5)
+
+    llm._client = Slow()  # type: ignore[assignment]
+    assert await llm.search_json("system", "plan something", timeout=0.05) is None

@@ -12,6 +12,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { GroupPage } from "./pages/GroupPage";
 import { SharePage } from "./pages/SharePage";
 import { Confetti } from "./components/Confetti";
+import { AgentNetworkPage } from "./pages/AgentNetworkPage";
 
 /**
  * Route guards:
@@ -43,6 +44,7 @@ export function App() {
           <Route path="friends" element={<ConnectionsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
+        <Route path="/agents" element={<AgentNetworkPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

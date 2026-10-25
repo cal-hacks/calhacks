@@ -34,7 +34,11 @@ const FEED_KINDS = [
   'obscure_place',
   'roast',
   'plan_proposal',
+  'plan_locked',
 ];
+const AGENT_EVENT_KINDS = ['trigger', 'request', 'reply', 'think', 'search', 'post', 'vote', 'react', 'say'];
+// The Agent Network screen shows recent activity; older events are dropped.
+const MAX_AGENT_EVENTS = 300;
 // Agent posts about a friend. They carry the friend's local date.
 const FRIEND_POST_KINDS = ['highlight', 'goal_hit', 'obscure_place', 'roast'];
 // Of those, the ones limited to one a day per friend per chat. Reaching a
@@ -717,6 +721,83 @@ export const postFeedItem = spacetimedb.reducer(
       replyToId,
       localDate: FRIEND_POST_KINDS.includes(kind) ? localDate : '',
     });
+  }
+);
+
+// --- The demo cast (agent-only) ---
+//
+// Seeded people nobody has claimed have no one on a phone to talk for them,
+// so the agent service gives them a voice in the demo. It can only ever
+// speak or react as these unclaimed people, never as someone who signed in.
+
+function castMember(ctx: Ctx, friendId: bigint) {
+  requireAgent(ctx);
+  const row = requireFriendRow(ctx, friendId);
+  if (row.identity) fail('only unclaimed cast members can be voiced by the agent');
+  return row;
+}
+
+export const castSendMessage = spacetimedb.reducer(
+  { friendId: t.u64(), groupId: t.u64(), text: t.string(), replyToId: t.u64() },
+  (ctx, { friendId, groupId, text, replyToId }) => {
+    const who = castMember(ctx, friendId);
+    if (!isMember(ctx, groupId, who.id)) fail('they are not in this chat');
+    checkReplyTo(ctx, groupId, replyToId);
+    insertFeedItem(ctx, {
+      groupId,
+      friendId: who.id,
+      kind: 'message',
+      text: cleanText(text),
+      createdBy: 'friend',
+      replyToId,
+      localDate: '',
+    });
+  }
+);
+
+// Adds the reaction if it isn't there yet.
+export const castReact = spacetimedb.reducer(
+  { friendId: t.u64(), feedItemId: t.u64(), emoji: t.string() },
+  (ctx, { friendId, feedItemId, emoji }) => {
+    const who = castMember(ctx, friendId);
+    const item = ctx.db.feedItem.id.find(feedItemId);
+    if (!item || !isMember(ctx, item.groupId, who.id)) fail('no such item');
+    const e = emoji.trim();
+    if (!e || e.length > 16) fail('emoji must be 1–16 characters');
+    for (const r of ctx.db.reaction.feedItemId.filter(feedItemId)) {
+      if (r.friendId === who.id && r.emoji === e) return;
+    }
+    ctx.db.reaction.insert({ id: 0n, feedItemId, friendId: who.id, emoji: e });
+  }
+);
+
+// --- Agent activity (agent-only) ---
+
+export const logAgentEvent = spacetimedb.reducer(
+  {
+    kind: t.string(),
+    actorFriendId: t.u64(),
+    targetFriendId: t.u64(),
+    groupId: t.u64(),
+    text: t.string(),
+    detail: t.string(),
+  },
+  (ctx, args) => {
+    requireAgent(ctx);
+    oneOf(args.kind, AGENT_EVENT_KINDS, 'kind');
+    ctx.db.agentEvent.insert({
+      id: 0n,
+      ...args,
+      text: cleanText(args.text),
+      detail: args.detail.trim().slice(0, MAX_TEXT),
+      createdAt: ctx.timestamp,
+    });
+    const count = ctx.db.agentEvent.count();
+    if (count > BigInt(MAX_AGENT_EVENTS)) {
+      const extra = Number(count) - MAX_AGENT_EVENTS;
+      const oldest = [...ctx.db.agentEvent.iter()].sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, extra);
+      for (const e of oldest) ctx.db.agentEvent.delete(e);
+    }
   }
 );
 

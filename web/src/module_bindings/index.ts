@@ -40,6 +40,8 @@ import AddGroupMemberReducer from "./add_group_member_reducer";
 import AddPhotoReducer from "./add_photo_reducer";
 import AddStatReducer from "./add_stat_reducer";
 import CancelPlanReducer from "./cancel_plan_reducer";
+import CastReactReducer from "./cast_react_reducer";
+import CastSendMessageReducer from "./cast_send_message_reducer";
 import ClaimAgentReducer from "./claim_agent_reducer";
 import ClaimFriendReducer from "./claim_friend_reducer";
 import ClearIngestTokenReducer from "./clear_ingest_token_reducer";
@@ -47,6 +49,7 @@ import ConfirmPlanReducer from "./confirm_plan_reducer";
 import CreateGroupReducer from "./create_group_reducer";
 import DeleteGoalReducer from "./delete_goal_reducer";
 import LeaveGroupReducer from "./leave_group_reducer";
+import LogAgentEventReducer from "./log_agent_event_reducer";
 import PostFeedItemReducer from "./post_feed_item_reducer";
 import PostNudgeReducer from "./post_nudge_reducer";
 import ProposePlanReducer from "./propose_plan_reducer";
@@ -71,6 +74,7 @@ import VotePlanReducer from "./vote_plan_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import AgentEventRow from "./agent_event_table";
 import CheckinRow from "./checkin_table";
 import FriendRow from "./friend_table";
 import GoalRow from "./goal_table";
@@ -93,6 +97,17 @@ import ReactionRow from "./reaction_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  agentEvent: __table({
+    name: 'agent_event',
+    indexes: [
+      { accessor: 'id', name: 'agent_event_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'agent_event_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, AgentEventRow),
   checkin: __table({
     name: 'checkin',
     indexes: [
@@ -275,6 +290,8 @@ const reducersSchema = __reducers(
   __reducerSchema("add_photo", AddPhotoReducer),
   __reducerSchema("add_stat", AddStatReducer),
   __reducerSchema("cancel_plan", CancelPlanReducer),
+  __reducerSchema("cast_react", CastReactReducer),
+  __reducerSchema("cast_send_message", CastSendMessageReducer),
   __reducerSchema("claim_agent", ClaimAgentReducer),
   __reducerSchema("claim_friend", ClaimFriendReducer),
   __reducerSchema("clear_ingest_token", ClearIngestTokenReducer),
@@ -282,6 +299,7 @@ const reducersSchema = __reducers(
   __reducerSchema("create_group", CreateGroupReducer),
   __reducerSchema("delete_goal", DeleteGoalReducer),
   __reducerSchema("leave_group", LeaveGroupReducer),
+  __reducerSchema("log_agent_event", LogAgentEventReducer),
   __reducerSchema("post_feed_item", PostFeedItemReducer),
   __reducerSchema("post_nudge", PostNudgeReducer),
   __reducerSchema("propose_plan", ProposePlanReducer),

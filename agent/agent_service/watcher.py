@@ -27,7 +27,8 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .coordinator import propose
-from .group import FriendUpdate, friend_update, group_friends
+from .events import EVENTS, chat_name
+from .group import Friend, FriendUpdate, friend_update, group_friends
 from .llm import Llm
 from .stdb import ReducerRejected, StdbClient
 
@@ -145,6 +146,7 @@ class Watcher:
         for g in goals:
             if g["id"] in done and g["id"] in self.active_goals:
                 if friend := friends.get(g["friend_id"]):
+                    await EVENTS.emit("trigger", f"{friend.first} reached their goal: {g['description']}", actor=friend.id, pause=True)
                     await self.share(friend, "goal_hit", f"{friend.first} just reached their goal: {g['description']}.",
                                      fallback=f"{friend.first} hit their goal: {g['description']} 🎯", always=True)
         self.active_goals = active
@@ -166,6 +168,15 @@ class Watcher:
             if m["id"] > self.last_message:
                 self.last_message = m["id"]
                 if CATCH_UP.search(m["text"]):
+                    who = friends.get(m["friend_id"])
+                    said = m["text"] if len(m["text"]) <= 70 else m["text"][:69] + "…"
+                    await EVENTS.emit(
+                        "trigger",
+                        f"{who.first if who else 'Someone'} said “{said}” in {await chat_name(self.stdb, m['group_id'])}",
+                        actor=m["friend_id"],
+                        group=m["group_id"],
+                        pause=True,
+                    )
                     await self.plan(m["group_id"], gather)
 
     async def stats(self, friends: dict[int, Friendly], new: list[dict], all_stats: list[dict]) -> None:
@@ -235,13 +246,26 @@ class Watcher:
         groups_only: bool = False,
     ) -> None:
         """Claude words it and, unless `always`, decides whether to post at all."""
+        await EVENTS.emit(
+            "think",
+            f"{friend.first}’s agent is writing a post" if always else f"{friend.first}’s agent: worth sharing?",
+            actor=friend.id,
+            detail=what,
+        )
         story = await self.llm.write_json(system, what, STORY_SCHEMA)
         if story is not None and not story["share"] and not always:
             log.info("Agent for %s chose not to share: %s", friend.name, what)
+            await EVENTS.emit("think", f"{friend.first}’s agent kept it private", actor=friend.id, detail="Too personal to post")
             return
-        await self.post(friend, kind, (story or {}).get("text") or fallback, groups_only=groups_only)
+        text = (story or {}).get("text") or fallback
+        posted = await self.post(friend, kind, text, groups_only=groups_only)
+        if posted:
+            where = "1 chat" if posted == 1 else f"{posted} chats"
+            await EVENTS.emit("post", f"{friend.first}’s agent posted to {where}", actor=friend.id, detail=text)
 
-    async def post(self, friend: Friendly, kind: str, text: str, *, groups_only: bool = False) -> None:
+    async def post(self, friend: Friendly, kind: str, text: str, *, groups_only: bool = False) -> int:
+        """Posts to each of the friend's chats; returns how many took it."""
+        posted = 0
         for group in await self.chats_of(friend.id, groups_only=groups_only):
             try:
                 await self.stdb.call(
@@ -254,19 +278,29 @@ class Watcher:
                     local_date=friend.local_date(),
                 )
                 log.info("Posted %s for %s in chat %s", kind, friend.name, group)
+                posted += 1
             except ReducerRejected as e:
                 # Daily limit or consent: the module said no, so skip this chat.
                 log.info("Skipped %s for %s in chat %s: %s", kind, friend.name, group, e)
+        return posted
 
     async def plan(self, group_id: int, gather: Callable[[], Awaitable[list[FriendUpdate]]]) -> None:
         """Plans for the people in this chat only. Friends without a running
         agent (signed up since the agents started) are read directly."""
         members = await group_friends(self.stdb, group_id)
         ids = {f.id for f in members}
+        for f in members:
+            await EVENTS.emit("request", f"Coordinator asked {f.name.split()[0]}’s agent for their week",
+                              target=f.id, group=group_id, pause=True)
         updates = [u for u in await gather() if u.friend.id in ids]
         have = {u.friend.id for u in updates}
         since = datetime.now(UTC) - LOOKBACK
         updates += [await friend_update(self.stdb, f, since) for f in members if f.id not in have]
+        if EVENTS.stdb is not None:
+            private = await kept_private(self.stdb, members)
+            for u in updates:
+                await EVENTS.emit("reply", shared_summary(u), actor=u.friend.id, group=group_id,
+                                  detail=f"🔒 kept private: {', '.join(private[u.friend.id])}", pause=True)
         result = await propose(self.stdb, group_id, updates, llm=self.llm)
         log.info("Catch-up request: %s", result.splitlines()[0])
 
@@ -281,3 +315,44 @@ class Watcher:
             g["id"] for g in groups
             if g["id"] in mine and size[g["id"]] > 1 and not (groups_only and g["is_direct"])
         )
+
+
+def shared_summary(u: FriendUpdate) -> str:
+    """What a friend's agent handed the coordinator, in one line."""
+    first = u.friend.name.split()[0]
+    bits = [f"{len(u.free_blocks)} free times" if u.free_blocks else "no calendar shared"]
+    if u.busy_through:
+        bits.append(f"busy until {u.busy_through:%a}")
+    wins = [h for h in u.highlights if not h.startswith("Goal: ")]
+    if wins:
+        bits.append(f"{len(wins)} win{'s' if len(wins) > 1 else ''} to share")
+    return f"{first}’s agent: {', '.join(bits)}"
+
+
+async def kept_private(stdb: StdbClient, members: list[Friend]) -> dict[int, list[str]]:
+    """What each friend's agent knows but didn't hand over, by their settings."""
+    ids = {f.id for f in members}
+    consent = {(r["friend_id"], r["source"]): r["share_level"]
+               for r in await stdb.sql("SELECT friend_id, source, share_level FROM consent") if r["friend_id"] in ids}
+    stats = [r for r in await stdb.sql("SELECT friend_id, type, value FROM stat") if r["friend_id"] in ids]
+    photos = {r["friend_id"] for r in await stdb.sql("SELECT friend_id FROM photo")}
+    out: dict[int, list[str]] = {}
+    for f in members:
+        items = []
+        if consent.get((f.id, "calendar"), "off") != "off":
+            items.append("event titles")
+        for x in stats:
+            if x["friend_id"] != f.id:
+                continue
+            if x["type"] == "canvas_deadlines":
+                try:
+                    n = len(json.loads(x["value"]).get("items", []))
+                except (ValueError, AttributeError):
+                    n = 0
+                items.append(f"{n} Canvas deadline titles" if n else "Canvas deadlines")
+            elif x["type"] == "screen_time" and consent.get((f.id, "screen_time")) != "highlights":
+                items.append("Screen Time numbers")
+        if f.id in photos:
+            items.append("exact photo locations")
+        out[f.id] = list(dict.fromkeys(items)) or ["nothing else on file"]
+    return out
