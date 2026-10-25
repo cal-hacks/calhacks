@@ -1,5 +1,5 @@
 import type { DB, Goal, GoalLog, Id, Permissions, SharingPrefs, User } from "./types";
-import { addDays, toISODate } from "./dates";
+import { addDays, periodStart, toISODate } from "./dates";
 import { hashPassword } from "./hash";
 
 export const DEMO_USERNAME = "demo";
@@ -107,6 +107,43 @@ export function sampleGoalsFor(userId: Id, seed = 42): { goals: Goal[]; logs: Go
   return { goals, logs };
 }
 
+/**
+ * The demo phone's goal: three runs so far this week, so logging one more on
+ * stage reaches it (confetti, and Maya's agent posts the win). Matches Maya's
+ * goal in the server seed. Runs are dated this week even early on a Monday.
+ */
+function mayaGoal(): { goal: Goal; logs: GoalLog[] } {
+  const goal: Goal = {
+    id: "g_maya_run",
+    userId: "u_maya",
+    title: "Run 4 times this week",
+    category: "fitness",
+    period: "weekly",
+    target: 4,
+    unit: "times",
+    direction: "atLeast",
+    trackBy: "manual",
+    shareWithFriends: true,
+    archived: false,
+    createdAt: Date.now(),
+  };
+  const now = new Date();
+  const weekStart = periodStart(now, "weekly");
+  const logs = [2, 1, 0].map((back, i): GoalLog => {
+    const day = addDays(now, -back);
+    return {
+      id: `l_maya_run_${i}`,
+      goalId: goal.id,
+      userId: "u_maya",
+      amount: 1,
+      date: toISODate(day < weekStart ? weekStart : day),
+      source: "manual",
+      createdAt: Date.now(),
+    };
+  });
+  return { goal, logs };
+}
+
 export function seedDB(version: number): DB {
   const demoSalt = "demo-salt";
   // Maya, Jordan and Sam can log in too (same password) so each demo phone is a different friend.
@@ -117,8 +154,8 @@ export function seedDB(version: number): DB {
       username: DEMO_USERNAME,
       displayName: "Riley Demo",
       email: "riley@example.com",
-      bio: "Grad school in Palo Alto. Will trade a library seat for a run buddy.",
-      city: "Palo Alto, CA",
+      bio: "New grad in SF. Will trade a library seat for a run buddy.",
+      city: "San Francisco, CA",
       avatar: { emoji: "📚", color: "#2a78d6" },
       passwordHash: hashPassword(DEMO_PASSWORD, demoSalt),
       salt: demoSalt,
@@ -127,7 +164,7 @@ export function seedDB(version: number): DB {
     seedUser({ ...demoLogin, id: "u_maya", username: "maya_runs", displayName: "Maya Chen", email: "maya@example.com", phone: "+15125550101", city: "Austin, TX", timezone: "America/Chicago", bio: "Training for my first half marathon.", avatar: { emoji: "🏃‍♀️", color: "#eb6834" } }),
     seedUser({ ...demoLogin, id: "u_jordan", username: "jordanp", displayName: "Jordan Park", email: "jordan@example.com", phone: "+12125550102", city: "New York, NY", timezone: "America/New_York", bio: "Law school survivor. Coffee-powered.", avatar: { emoji: "⚖️", color: "#6250d6" } }),
     seedUser({ ...demoLogin, id: "u_sam", username: "sam_l", displayName: "Sam Lee", email: "sam@example.com", phone: "+12065550103", city: "Seattle, WA", bio: "Finds the weirdest places on weekends.", avatar: { emoji: "🦙", color: "#1baf7a" } }),
-    seedUser({ id: "u_priya", username: "priya.k", displayName: "Priya Kumar", email: "priya@example.com", phone: "+13125550104", city: "Chicago, IL", timezone: "America/Chicago", bio: "Med school, year 2.", avatar: { emoji: "🩺", color: "#e34948" } }),
+    seedUser({ id: "u_priya", username: "priya.k", displayName: "Priya Kumar", email: "priya@example.com", phone: "+13125550104", city: "Berkeley, CA", bio: "PhD year 1 at Berkeley. Just moved, show me your spots.", avatar: { emoji: "🩺", color: "#e34948" } }),
     seedUser({ id: "u_alex", username: "alexr", displayName: "Alex Rivera", email: "alex@example.com", phone: "+16175550105", city: "Boston, MA", timezone: "America/New_York", bio: "Climbing, cooking, consulting.", avatar: { emoji: "🧗", color: "#008300" } }),
   ];
 
@@ -144,7 +181,10 @@ export function seedDB(version: number): DB {
     { id: "c_4", fromId: "u_priya", toId: "u_demo", status: "pending" as const, createdAt: Date.now() },
   ];
 
-  const { goals, logs } = sampleGoalsFor("u_demo");
+  const demo = sampleGoalsFor("u_demo");
+  const maya = mayaGoal();
+  const goals = [...demo.goals, maya.goal];
+  const logs = [...demo.logs, ...maya.logs];
   const mayaShare = defaultSharing("u_demo", "u_maya");
   mayaShare.categories.fitness = true;
   mayaShare.categories.photos = true;

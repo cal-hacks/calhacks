@@ -20,6 +20,7 @@ import spacetimedb, {
   nudge,
   type Ctx,
 } from './schema';
+import { greet } from './cast';
 import { areFriends, befriend, directChat, friendshipBetween, isMember } from './friends';
 import { resetAll, seedDemo as runSeed } from './seed';
 
@@ -297,7 +298,8 @@ export const updateProfile = spacetimedb.reducer(
 const MAX_GROUP_SIZE = 20;
 
 // Asks `toId` to be friends. If they already asked, this accepts. Seeded
-// people nobody has claimed have no one to tap Accept, so they accept at once.
+// people nobody has claimed have no one to tap Accept, so they accept at once
+// and say hi.
 export const sendFriendRequest = spacetimedb.reducer(
   { toId: t.u64() },
   (ctx, { toId }) => {
@@ -309,6 +311,7 @@ export const sendFriendRequest = spacetimedb.reducer(
     if (existing && existing.fromId === self.id) fail('request already sent');
     if (existing || !other.identity) {
       befriend(ctx, other.id, self.id);
+      greet(ctx, other.id, self.id);
       return;
     }
     ctx.db.friendship.insert({
@@ -328,6 +331,7 @@ export const acceptFriendRequest = spacetimedb.reducer(
     const row = friendshipBetween(ctx, self.id, fromId);
     if (!row || row.status !== 'pending' || row.toId !== self.id) fail('no request from them');
     befriend(ctx, fromId, self.id);
+    greet(ctx, fromId, self.id);
   }
 );
 

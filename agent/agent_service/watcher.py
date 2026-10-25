@@ -98,7 +98,10 @@ class Watcher:
     last_message: int = 0
     last_stat: int = 0
     last_photo: int = 0
-    done_goals: set[int] = field(default_factory=set)
+    # Goals last seen in progress. A win is a goal that was in progress and is
+    # now done; one that first shows up already done (an app syncing a goal
+    # it reached earlier) isn't news.
+    active_goals: set[int] = field(default_factory=set)
     # The demo group: reset_demo + seed_demo makes a new one. New 1:1s and
     # groups appear all the time and don't change it.
     first_group: int | None = None
@@ -117,6 +120,7 @@ class Watcher:
         stats = await self.stdb.sql("SELECT id, friend_id, type, value, source FROM stat")
         photos = await self.stdb.sql("SELECT id, friend_id, place_name, obscurity_score, caption FROM photo")
         done = {g["id"] for g in goals if g["status"] == "done"}
+        active = {g["id"] for g in goals if g["status"] != "done"}
 
         # reset_demo + seed_demo makes a new group, and ids keep counting up, so
         # the reseeded history would look new. Start over when that happens.
@@ -126,7 +130,7 @@ class Watcher:
             self.last_message = max((m["id"] for m in messages), default=0)
             self.last_stat = max((x["id"] for x in stats), default=0)
             self.last_photo = max((p["id"] for p in photos), default=0)
-            self.done_goals = done
+            self.active_goals = active
             self.first_group = first_group
             self.primed = True
             return
@@ -139,11 +143,11 @@ class Watcher:
                                      fallback=f"{friend.first} checked in: {c['text']}")
 
         for g in goals:
-            if g["id"] in done and g["id"] not in self.done_goals:
+            if g["id"] in done and g["id"] in self.active_goals:
                 if friend := friends.get(g["friend_id"]):
                     await self.share(friend, "goal_hit", f"{friend.first} just reached their goal: {g['description']}.",
                                      fallback=f"{friend.first} hit their goal: {g['description']} 🎯", always=True)
-        self.done_goals = done
+        self.active_goals = active
 
         new_stats = [x for x in sorted(stats, key=lambda x: x["id"]) if x["id"] > self.last_stat]
         if new_stats:
