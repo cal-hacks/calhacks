@@ -69,12 +69,15 @@ export async function readBusyTimes(): Promise<{ start: string; end: string }[] 
     .map((e) => ({ start: new Date(e.startDate).toISOString(), end: new Date(e.endDate).toISOString() }));
 }
 
-/** Send this week's busy times so the coordinator plans around them. */
-export async function syncBusyTimes(): Promise<number | null> {
+/**
+ * Send this week's busy times so the coordinator plans around them.
+ * "skipped" means calendar sharing is off; null means no calendar access.
+ */
+export async function syncBusyTimes(): Promise<"synced" | "skipped" | null> {
   const busy = await readBusyTimes();
   if (!busy) return null;
-  const r = await agentPost<{ free_blocks: number }>("/ingest/busy", { busy });
-  return r.free_blocks;
+  const r = await agentPost<{ status: "synced" | "skipped" }>("/calendar/device/busy", { busy });
+  return r.status;
 }
 
 // ---------- photos and screenshots ----------

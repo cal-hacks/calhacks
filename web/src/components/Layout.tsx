@@ -5,14 +5,16 @@ import { currentUser } from "../lib/api";
 import { connectAs, syncGoals, syncProfile, useLive } from "../lib/live";
 import { APP_NAME } from "../lib/meta";
 import { Avatar } from "./Avatar";
+import { BeeLogo } from "./ui";
+import { ChartIcon, ChatIcon, PeopleIcon, PersonIcon, ShareIcon, TargetIcon } from "./icons";
 
 const NAV = [
-  { to: "/group", label: "Group", icon: "💬" },
-  { to: "/share", label: "Share", icon: "📤" },
-  { to: "/", label: "Dashboard", icon: "📊", end: true },
-  { to: "/goals", label: "Goals", icon: "🎯" },
-  { to: "/friends", label: "Friends", icon: "🫂" },
-  { to: "/settings", label: "Profile", icon: "⚙️" },
+  { to: "/group", label: "Group", icon: ChatIcon },
+  { to: "/share", label: "Share", icon: ShareIcon },
+  { to: "/", label: "Dashboard", icon: ChartIcon, end: true },
+  { to: "/goals", label: "Goals", icon: TargetIcon },
+  { to: "/friends", label: "Friends", icon: PeopleIcon },
+  { to: "/settings", label: "Profile", icon: PersonIcon },
 ];
 
 export function Layout() {
@@ -37,11 +39,11 @@ export function Layout() {
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>◎</span> {APP_NAME}
+          <BeeLogo size={40} /> {APP_NAME}
         </div>
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className="nav-item">
-            <span className="nav-icon" aria-hidden>{n.icon}</span>
+            <span className="nav-icon" aria-hidden><n.icon size={24} /></span>
             <span className="nav-label">{n.label}</span>
             {n.to === "/friends" && pending > 0 && <span className="badge" aria-label={`${pending} requests`}>{pending}</span>}
           </NavLink>

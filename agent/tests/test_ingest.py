@@ -27,8 +27,6 @@ class FakeDb:
             if "FROM ingest_token" in q:
                 rows = [[1]] if hash_token(TOKEN) in q else []
                 return self.result([("friend_id", {"U64": []})], rows)
-            if "SELECT timezone FROM friend" in q:
-                return self.result([("timezone", {"String": []})], [["America/Chicago"]])
             if "FROM friend" in q:
                 return self.result([("name", {"String": []})], [["Maya Chen"]])
             return httpx.Response(400, text=q)
@@ -249,23 +247,3 @@ async def test_canvas_refresh_only_when_stale(tmp_path):
     store.put(1, CanvasLogin("https://canvas.school.edu", "t", synced_at=datetime.now(UTC).isoformat()))
     assert await canvas.refresh_due(None, None, store) == {}
 
-
-# --- Phone calendars ---
-
-def test_busy_times_become_free_blocks(api):
-    client, db, _, _ = api
-    r = client.post("/ingest/busy", headers=AUTH, json={"busy": [
-        {"start": "2030-01-01T00:00:00Z", "end": "2030-01-01T01:00:00Z"},
-        {"start": "2030-01-02T00:00:00Z", "end": "2030-01-01T00:00:00Z"},  # ends before it starts: ignored
-    ]})
-    assert r.status_code == 200 and r.json()["free_blocks"] > 0
-    (reducer, args), = db.calls
-    assert reducer == "set_free_blocks" and args["friendId"] == 1
-    blocks = json.loads(args["blocks"])
-    assert all(b["start"] < b["end"] for b in blocks)
-
-
-def test_busy_consent_off_is_403(api):
-    client, db, _, _ = api
-    db.reject = "calendar is off for this friend"
-    assert client.post("/ingest/busy", headers=AUTH, json={"busy": []}).status_code == 403

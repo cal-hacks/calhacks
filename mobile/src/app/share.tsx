@@ -112,8 +112,9 @@ function CalendarCard({ off }: { off: boolean }) {
       if (Platform.OS === "web") throw new Error("Calendar sync runs on the phone.");
       const { status } = await Calendar.requestCalendarPermissionsAsync();
       if (status !== "granted") throw new Error("Calendar access is off. Allow it in Settings → Orbit.");
-      const blocks = await syncBusyTimes();
-      return blocks === null ? null : `Sent this week's busy times. You have ${blocks} free windows for plans.`;
+      const result = await syncBusyTimes();
+      if (result === "skipped") throw new Error("Calendar sharing is off above.");
+      return result && "Sent this week's busy times. Plans will fit around them.";
     });
   return (
     <Section title="📅 Calendar">

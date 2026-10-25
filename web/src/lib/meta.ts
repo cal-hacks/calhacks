@@ -1,6 +1,6 @@
 import type { CalendarProvider, GoalCategory, GoalPeriod, ShareCategory, TrackingSource, UpdateFrequency } from "./types";
 
-export const APP_NAME = "Orbit";
+export const APP_NAME = "Waggle";
 
 export const SHARE_CATEGORIES: { key: ShareCategory; label: string; icon: string; hint: string }[] = [
   { key: "checkins", label: "Check-ins", icon: "💬", hint: "Things you post, like “hit my goal 🎉”" },

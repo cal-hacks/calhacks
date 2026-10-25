@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Linking, Text, View } from "react-native";
+import { Linking, View } from "react-native";
+import { Text } from "./Text";
 import { useDB } from "../lib/db";
 import { currentUser, permissionsOf, setCalendar, setPermissions } from "../lib/api";
 import { CALENDAR_PROVIDERS } from "../lib/meta";

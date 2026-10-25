@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
+import { Text, TextInput } from "../../components/Text";
 import { router } from "expo-router";
 import { useDB } from "../../lib/db";
 import { currentUser, deleteGoal, logProgress } from "../../lib/api";
@@ -140,7 +141,7 @@ function GoalRow({ db, goal }: { db: DB; goal: Goal }) {
           returnKeyType="done"
           onSubmitEditing={submitLog}
           accessibilityLabel={`Log ${goal.unit} for ${goal.title}`}
-          style={{ flex: 1, borderWidth: 1, borderColor: c.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, color: c.text, backgroundColor: c.surface }}
+          style={{ flex: 1, borderWidth: 2, borderColor: c.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, fontSize: 17, color: c.text, backgroundColor: c.surface }}
         />
         <Button small variant="secondary" title="Log" disabled={!amount} onPress={submitLog} />
       </Row>

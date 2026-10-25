@@ -1,53 +1,60 @@
-import { useColorScheme } from "react-native";
+// Waggle tokens. Ink outlines, honey for "active / connected / chosen" (always
+// a fill behind ink text, never text color), paper background. Light only:
+// app.json sets userInterfaceStyle "light".
 
-const light = {
-  bg: "#f5f5f2",
-  surface: "#fcfcfb",
-  surface2: "#f0efeb",
-  border: "#e2e1dc",
-  text: "#0b0b0b",
-  text2: "#52514e",
-  text3: "#75746f",
-  accent: "#2a78d6",
-  accentInk: "#ffffff",
-  accentSoft: "#e3eefb",
-  series1: "#2a78d6",
-  grid: "#e6e5e0",
-  good: "#1a7f37",
-  goodSoft: "#dcf3e2",
-  warn: "#9a6700",
-  warnSoft: "#fff4d6",
-  danger: "#c62828",
-  dangerSoft: "#fde8e8",
-  miss: "#d4d3cd",
+export const waggle = {
+  ink: "#1A1A1A",
+  honey: "#F5C518",
+  honeySoft: "#FFF4C2",
+  paper: "#FFFDF6",
+  card: "#FFFFFF",
+  muted: "#5C5C5C",
+  hexLine: "#EADFB4",
+  dividerDashed: "#D9D2B8",
+  live: "#2E7D32",
+  off: "#EDEAE0",
 };
 
-export type Colors = typeof light;
-
-const dark: Colors = {
-  bg: "#121211",
-  surface: "#1a1a19",
-  surface2: "#232321",
-  border: "#2f2f2c",
-  text: "#f0efec",
-  text2: "#c3c2b7",
-  text3: "#9a998f",
-  accent: "#3987e5",
-  accentInk: "#ffffff",
-  accentSoft: "#1c2b40",
-  series1: "#3987e5",
-  grid: "#2b2b29",
-  good: "#4cc26a",
-  goodSoft: "#17301e",
-  warn: "#e0a930",
-  warnSoft: "#3a2e10",
-  danger: "#ef6b6b",
-  dangerSoft: "#3a1818",
-  miss: "#3a3a37",
+/** Screens read these names; they map onto the Waggle tokens. */
+const colors = {
+  bg: waggle.paper,
+  surface: waggle.card,
+  surface2: "#F7F2E0",
+  border: waggle.ink,
+  text: waggle.ink,
+  text2: waggle.muted,
+  text3: waggle.muted,
+  accent: waggle.honey,
+  accentInk: waggle.ink,
+  accentSoft: waggle.honeySoft,
+  series1: waggle.honey,
+  grid: waggle.dividerDashed,
+  good: waggle.live,
+  goodSoft: "#E3F1E4",
+  warn: "#7A5A00",
+  warnSoft: waggle.honeySoft,
+  danger: "#B3261E",
+  dangerSoft: "#FCE8E6",
+  miss: waggle.off,
 };
+
+export type Colors = typeof colors;
 
 export function useColors(): Colors {
-  return useColorScheme() === "dark" ? dark : light;
+  return colors;
 }
 
-export const radius = { lg: 16, md: 12, pill: 999 };
+/** Patrick Hand, loaded in the root layout. It has one weight, so bold isn't used. */
+export const FONT = "PatrickHand_400Regular";
+
+export const radius = { lg: 16, md: 14, pill: 999 };
+export const border = 2;
+
+/** The signature hard offset shadow: primary buttons and the featured card only. */
+export const hardShadow = {
+  shadowColor: waggle.ink,
+  shadowOffset: { width: 3, height: 3 },
+  shadowOpacity: 1,
+  shadowRadius: 0,
+  elevation: 3,
+};

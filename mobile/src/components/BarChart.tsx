@@ -38,7 +38,7 @@ export function BarChart({ bars, title, unit, height = 190 }: { bars: Bar[]; tit
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}>
         <Txt bold>{title}</Txt>
         <Pressable onPress={() => setShowTable((v) => !v)} accessibilityRole="button" hitSlop={8}>
-          <Txt small style={{ color: c.accent, fontWeight: "600" }}>{showTable ? "Show chart" : "Show table"}</Txt>
+          <Txt small style={{ color: c.text, textDecorationLine: "underline" }}>{showTable ? "Show chart" : "Show table"}</Txt>
         </Pressable>
       </View>
 

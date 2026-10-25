@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "../../components/Text";
 import { router } from "expo-router";
 import { useDB } from "../../lib/db";
 import { currentUser, friendsOf, loadSampleData } from "../../lib/api";

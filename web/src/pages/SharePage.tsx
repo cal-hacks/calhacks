@@ -7,12 +7,12 @@ import { Segmented } from "../components/Toggle";
 
 type Level = "highlights" | "planning_only" | "off";
 
-const SOURCES: { key: string; label: string; icon: string; hint: string }[] = [
-  { key: "health", label: "Health", icon: "🏃", hint: "Steps, sleep and workouts from the Health Shortcut" },
-  { key: "screen_time", label: "Screen Time", icon: "📱", hint: "Screenshots you upload" },
-  { key: "photos", label: "Photos", icon: "📸", hint: "Places from photos you upload" },
-  { key: "calendar", label: "Calendar", icon: "📅", hint: "Free/busy only, never event details" },
-  { key: "canvas", label: "Canvas", icon: "📚", hint: "Upcoming deadlines" },
+const SOURCES: { key: string; label: string; hint: string }[] = [
+  { key: "health", label: "Health", hint: "Steps, sleep and workouts from the Health Shortcut" },
+  { key: "screen_time", label: "Screen Time", hint: "Screenshots you upload" },
+  { key: "photos", label: "Photos", hint: "Places from photos you upload" },
+  { key: "calendar", label: "Calendar", hint: "Free/busy only, never event details" },
+  { key: "canvas", label: "Canvas", hint: "Upcoming deadlines" },
 ];
 
 const LEVELS: { key: Level; label: string }[] = [
@@ -57,7 +57,6 @@ export function SharePage() {
         <h2 className="card-title">What your agent can use</h2>
         {SOURCES.map((s) => (
           <div key={s.key} className="consent-row">
-            <span className="toggle-icon" aria-hidden>{s.icon}</span>
             <span className="toggle-text">
               <strong>{s.label}</strong>
               <small className="muted">{s.hint}</small>
@@ -78,7 +77,7 @@ export function SharePage() {
         <HealthCard off={level("health") === "off"} />
         <CanvasCard off={level("canvas") === "off"} />
         <section className="card stack-sm">
-          <h2 className="card-title">📅 Google Calendar</h2>
+          <h2 className="card-title">Google Calendar</h2>
           <p className="muted small">
             Connect it under <Link to="/settings">Profile → Connected data</Link>. Your agent reads free/busy for the
             next week, so the coordinator can suggest times that actually work. Event names are never read.
@@ -127,7 +126,7 @@ function ScreenTimeCard({ off }: { off: boolean }) {
   };
 
   return (
-    <Card title="📱 Screen Time">
+    <Card title="Screen Time">
       <p className="muted small">
         Upload a screenshot of Settings → Screen Time. Claude reads the daily average and top apps. If you have the
         least screen time in the group, your agent will brag for you. "Most" is only posted if you allowed roasts.
@@ -204,7 +203,7 @@ function PhotoCard({ on }: { on: boolean }) {
   };
 
   return (
-    <Card title="📸 Weirdest place">
+    <Card title="Weirdest place">
       <p className="muted small">
         Pick a photo from somewhere fun. Only its location and time are sent (the photo stays on your device); your
         agent names the place, and if it's unusual enough, posts it as the weirdest place of the week.
@@ -244,7 +243,7 @@ function HealthCard({ off }: { off: boolean }) {
   }, [shown]);
 
   return (
-    <Card title="🏃 Apple Health">
+    <Card title="Apple Health">
       <p className="muted small">
         An iOS Shortcut sends today's steps, last night's sleep and workouts. Sleep is only ever used privately;
         workouts and big step days can become highlights.
@@ -291,7 +290,7 @@ function CanvasCard({ off }: { off: boolean }) {
   };
 
   return (
-    <Card title="📚 Canvas">
+    <Card title="Canvas">
       <p className="muted small">
         Your agent checks upcoming deadlines hourly. Three or more in a week counts as a heavy week, which the
         coordinator plans around. Make a token in Canvas → Account → Settings → New access token.

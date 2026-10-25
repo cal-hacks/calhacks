@@ -1,17 +1,20 @@
 import { useEffect } from "react";
-import { ActivityIndicator, AppState, View, useColorScheme } from "react-native";
+import { ActivityIndicator, AppState, View } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import { DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import { PatrickHand_400Regular, useFonts } from "@expo-google-fonts/patrick-hand";
 import { hydrate, useDB, useHydrated } from "../lib/db";
 import { currentUser } from "../lib/api";
 import { syncScreenTimeGoals } from "../lib/screenTime";
-import { useColors } from "../components/theme";
+import { FONT, useColors } from "../components/theme";
 
 export default function RootLayout() {
-  const ready = useHydrated();
+  const hydrated = useHydrated();
+  const [fontsLoaded, fontError] = useFonts({ PatrickHand_400Regular });
+  // If the font can't load, carry on in the system font rather than hang.
+  const ready = hydrated && (fontsLoaded || !!fontError);
   const c = useColors();
-  const scheme = useColorScheme();
 
   useEffect(() => {
     hydrate().then(syncScreenTimeGoals);
@@ -30,10 +33,16 @@ export default function RootLayout() {
     );
   }
 
-  const base = scheme === "dark" ? DarkTheme : DefaultTheme;
+  const base = DefaultTheme;
   return (
-    <ThemeProvider value={{ ...base, colors: { ...base.colors, background: c.bg, card: c.surface, primary: c.accent, text: c.text, border: c.border } }}>
-      <StatusBar style="auto" />
+    <ThemeProvider
+      value={{
+        ...base,
+        colors: { ...base.colors, background: c.bg, card: c.bg, primary: c.text, text: c.text, border: c.border },
+        fonts: Object.fromEntries(Object.entries(base.fonts).map(([k, v]) => [k, { ...v, fontFamily: FONT, fontWeight: "400" }])) as typeof base.fonts,
+      }}
+    >
+      <StatusBar style="dark" />
       <Routes />
     </ThemeProvider>
   );
@@ -48,7 +57,14 @@ export default function RootLayout() {
 function Routes() {
   const me = currentUser(useDB());
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        headerTitleStyle: { fontFamily: FONT, fontSize: 22 },
+        headerBackTitleStyle: { fontFamily: FONT },
+        headerShadowVisible: false,
+      }}
+    >
       <Stack.Protected guard={!me}>
         <Stack.Screen name="auth" />
       </Stack.Protected>

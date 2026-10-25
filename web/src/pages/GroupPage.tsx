@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { addCheckin, sendMessage, toggleReaction, useLive, votePlan, type LiveState } from "../lib/live";
 import type { FeedItem, Friend, Plan } from "../module_bindings/types";
+import { Avatar } from "../components/Avatar";
+import { BeeLogo } from "../components/ui";
+import { PlusIcon } from "../components/icons";
 
 const REACTIONS = ["❤️", "🎉", "😂", "👏"];
 
-const KIND_LABEL: Record<string, { label: string; icon: string }> = {
-  highlight: { label: "Highlight", icon: "✨" },
-  goal_hit: { label: "Goal hit", icon: "🎯" },
-  obscure_place: { label: "Weirdest place", icon: "🗺️" },
-  roast: { label: "Roast (opted in)", icon: "🔥" },
-  plan_proposal: { label: "Plan", icon: "📅" },
+const KIND_LABEL: Record<string, string> = {
+  highlight: "Highlight",
+  goal_hit: "Goal hit",
+  obscure_place: "Weirdest place",
+  roast: "Roast (opted in)",
+  plan_proposal: "Plan",
 };
 
 function timeLabel(item: { createdAt: { toDate(): Date } }) {
@@ -81,9 +84,9 @@ export function GroupPage() {
           <p className="muted">Everyone here has an agent. Agents post wins and suggest plans; nothing is shared that a friend hasn't opted into.</p>
         </div>
         <div className="group-members" aria-label="Members">
-          {members.map((f) => (
-            <span key={String(f.id)} className="member" title={`${f.name} · ${f.city}`}>
-              {f.avatar || "🙂"}
+          {members.map((f, i) => (
+            <span key={String(f.id)} title={`${f.name} · ${f.city}`}>
+              <Avatar name={f.name} size={32} tone={f.id === live.me?.id ? "honey" : i % 2 ? "soft" : "white"} />
             </span>
           ))}
         </div>
@@ -105,7 +108,7 @@ export function GroupPage() {
           onClick={() => setAsCheckin((v) => !v)}
           title="A check-in tells your agent what happened; it decides whether to share it"
         >
-          🎉<span className="chip-text"> Check-in</span>
+          <PlusIcon size={18} strokeWidth={2.6} /><span className="chip-text">Check-in</span>
         </button>
         <input
           className="input"
@@ -132,14 +135,14 @@ function ChatItem({ item, live, friendById }: { item: FeedItem; live: LiveState;
   const parent = item.replyToId ? live.feed.find((f) => f.id === item.replyToId) : undefined;
 
   if (item.createdBy === "agent") {
-    const kind = KIND_LABEL[item.kind] ?? { label: "Agent", icon: "🤖" };
+    const kind = KIND_LABEL[item.kind] ?? "Agent";
     const plan = item.kind === "plan_proposal" ? planFor(live, item) : undefined;
     return (
       <article className="agent-post">
         <div className="agent-head">
-          <span aria-hidden>{kind.icon}</span>
+          <BeeLogo size={22} />
           <strong>{item.kind === "plan_proposal" ? "Coordinator" : `${author?.name.split(" ")[0] ?? "Friend"}'s agent`}</strong>
-          <span className="pill">{kind.label}</span>
+          <span className="pill pill-on">{kind}</span>
           <span className="small muted">{timeLabel(item)}</span>
         </div>
         <p>{item.text}</p>
@@ -151,7 +154,7 @@ function ChatItem({ item, live, friendById }: { item: FeedItem; live: LiveState;
 
   return (
     <article className={`bubble-row ${mine ? "mine" : ""}`}>
-      {!mine && <span className="member" aria-hidden>{author?.avatar || "🙂"}</span>}
+      {!mine && <Avatar name={author?.name} size={32} />}
       <div className="bubble">
         {!mine && <div className="small muted">{author?.name ?? "Someone"}</div>}
         {parent && <div className="reply-to small muted">↪ {parent.text.slice(0, 60)}</div>}
@@ -193,12 +196,12 @@ function PlanCard({ plan, live }: { plan: Plan; live: LiveState }) {
   const voters = (optionId: bigint) =>
     votes
       .filter((v) => v.optionId === optionId)
-      .map((v) => live.friends.find((f) => f.id === v.friendId)?.avatar || "🙂");
+      .map((v) => live.friends.find((f) => f.id === v.friendId)?.name ?? "?");
 
   return (
     <div className="plan-card">
-      {plan.status === "confirmed" && <div className="status status-good">✅ Confirmed</div>}
-      {plan.status === "cancelled" && <div className="status status-warn">Cancelled</div>}
+      {plan.status === "confirmed" && <span className="pill pill-on self-start">It's a plan!</span>}
+      {plan.status === "cancelled" && <span className="pill pill-off self-start">Cancelled</span>}
       {options.map((o) => {
         const picked = plan.confirmedOptionId === o.id;
         return (
@@ -211,7 +214,11 @@ function PlanCard({ plan, live }: { plan: Plan; live: LiveState }) {
           >
             <span className="plan-label">{o.label}</span>
             {o.detail && <span className="small muted">{o.detail}</span>}
-            <span className="plan-voters">{voters(o.id).join(" ")}</span>
+            <span className="plan-voters">
+              {voters(o.id).map((name, i) => (
+                <Avatar key={i} name={name} size={26} />
+              ))}
+            </span>
           </button>
         );
       })}

@@ -78,12 +78,12 @@ export default function GoalEditor() {
           title: isNew ? "New goal" : "Edit goal",
           headerLeft: () => (
             <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button">
-              <Txt style={{ color: c.accent }}>Cancel</Txt>
+              <Txt style={{ color: c.text, textDecorationLine: "underline" }}>Cancel</Txt>
             </Pressable>
           ),
           headerRight: () => (
             <Pressable onPress={save} hitSlop={10} accessibilityRole="button">
-              <Txt bold style={{ color: c.accent }}>Save</Txt>
+              <Txt bold style={{ color: c.text, textDecorationLine: "underline" }}>Save</Txt>
             </Pressable>
           ),
         }}
@@ -140,7 +140,7 @@ export default function GoalEditor() {
                   onPress={() => set("trackBy", s.key)}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: active }}
-                  style={{ padding: 12, borderRadius: 12, borderWidth: 1, borderColor: active ? c.accent : c.border, backgroundColor: active ? c.accentSoft : c.surface }}
+                  style={{ padding: 12, borderRadius: 12, borderWidth: 2, borderColor: c.border, backgroundColor: active ? c.accent : c.surface }}
                 >
                   <Txt bold>{s.label}</Txt>
                   <Txt small muted>{s.hint}</Txt>

@@ -4,6 +4,8 @@ import { ApiError, logIn, signInWithGoogle, signUp, type GoogleProfile } from ".
 import { APP_NAME } from "../lib/meta";
 import { DEMO_PASSWORD, DEMO_USERNAME } from "../lib/seed";
 import { GoogleButton } from "../components/GoogleButton";
+import { BeeLogo, HexBackground } from "../components/ui";
+import { CalendarIcon, PeopleIcon, TargetIcon } from "../components/icons";
 
 type Mode = "signup" | "login";
 
@@ -49,18 +51,21 @@ export function AuthPage() {
   return (
     <div className="auth">
       <section className="auth-hero">
+        <HexBackground />
         <div className="brand brand-lg">
-          <span className="brand-mark" aria-hidden>◎</span> {APP_NAME}
+          <BeeLogo size={72} title={`${APP_NAME} bee logo`} /> {APP_NAME}
         </div>
-        <h1>Stay in each other's lives after graduation.</h1>
+        <h1>
+          <span className="highlight">Stay in each other's lives</span> after graduation.
+        </h1>
         <p>
           Your agent notices the wins worth sharing, from a first 10K to a weird weekend spot, and turns them into
           plans with the friends who moved away.
         </p>
         <ul className="auth-points">
-          <li>🎯 Set goals and let your agent track them</li>
-          <li>🫂 Choose exactly what each friend sees</li>
-          <li>🗓️ Find time that works across time zones</li>
+          <li><TargetIcon size={24} /> Set goals and let your agent track them</li>
+          <li><PeopleIcon size={24} /> Choose exactly what each friend sees</li>
+          <li><CalendarIcon size={24} /> Find time that works across time zones</li>
         </ul>
       </section>
 

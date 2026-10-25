@@ -167,7 +167,20 @@ async def sync_friend(
         log.info("Google refused the token for friend %s: %s", friend_id, e)
         store.drop(friend_id)
         return "expired"
-    blocks = free_blocks(candidate_windows(rows[0]["timezone"], now), busy)
+    if not await store_free_blocks(stdb, friend_id, rows[0]["timezone"], busy, now):
+        # Calendar consent is off (or not synced from the app yet): try again
+        # on the next refresh.
+        token.synced_at = None
+        store.save()
+        return "skipped"
+    token.synced_at = now
+    store.save()
+    return "synced"
+
+
+async def store_free_blocks(stdb: StdbClient, friend_id: int, timezone: str, busy: list[Block], now: datetime) -> bool:
+    """Turns busy times into free blocks for the next week and stores them. False if consent refused it."""
+    blocks = free_blocks(candidate_windows(timezone, now), busy)
     try:
         await stdb.call(
             "set_free_blocks",
@@ -175,16 +188,19 @@ async def sync_friend(
             blocks=json.dumps([{"start": s.isoformat(), "end": e.isoformat()} for s, e in blocks]),
         )
     except ReducerRejected as e:
-        # Calendar consent is off (or not synced from the app yet): skip, and
-        # try again on the next refresh.
         log.info("Skipped free blocks for friend %s: %s", friend_id, e)
-        token.synced_at = None
-        store.save()
-        return "skipped"
-    token.synced_at = now
-    store.save()
+        return False
     log.info("Stored %d free blocks for friend %s", len(blocks), friend_id)
-    return "synced"
+    return True
+
+
+async def sync_device_busy(stdb: StdbClient, friend_id: int, busy: list[Block], *, now: datetime | None = None) -> str:
+    """Free blocks from busy times the phone read from its own calendars (iCloud, Outlook, Google...)."""
+    now = now or datetime.now(UTC)
+    rows = await stdb.sql(f"SELECT timezone FROM friend WHERE id = {friend_id}")
+    if not rows:
+        return "unknown_friend"
+    return "synced" if await store_free_blocks(stdb, friend_id, rows[0]["timezone"], busy, now) else "skipped"
 
 
 async def refresh_due(

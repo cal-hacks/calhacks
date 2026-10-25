@@ -50,6 +50,78 @@ export function decodeGoogleCredential(credential: string): GoogleProfile {
 
 export type CalendarConnectResult = { status: "connected"; account: string } | { status: "redirecting" } | { status: "cancelled" };
 
+const SIGN_IN_SCOPES = "openid email profile https://www.googleapis.com/auth/calendar.freebusy";
+const CALENDAR_TOKEN_KEY = "waggle.calendarToken";
+
+/** Ask Google for a token. Resolves null if the person closes the consent screen. */
+function requestGoogleToken(scope: string, hint?: string): Promise<{ access_token: string; expires_in: number } | null> {
+  return new Promise((resolve) => {
+    const client = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope,
+      hint,
+      callback: (resp: any) =>
+        resolve(resp.error || !resp.access_token ? null : { access_token: resp.access_token, expires_in: Number(resp.expires_in) || 3600 }),
+      error_callback: () => resolve(null),
+    });
+    client.requestAccessToken();
+  });
+}
+
+/**
+ * Keep a Calendar token until the agent service can take it: it needs this
+ * friend's ingest token, which only exists once they've joined the hive.
+ */
+export function queueCalendarToken(accessToken: string, expiresIn: number) {
+  try {
+    sessionStorage.setItem(CALENDAR_TOKEN_KEY, JSON.stringify({ accessToken, expiresAt: Date.now() + expiresIn * 1000 }));
+  } catch {
+    // Storage blocked: Calendar can be connected again from You.
+  }
+  void flushCalendarToken();
+}
+
+/** Hand a queued Calendar token to the agent service. Safe to call often. */
+export async function flushCalendarToken() {
+  let queued: { accessToken: string; expiresAt: number } | null = null;
+  try {
+    queued = JSON.parse(sessionStorage.getItem(CALENDAR_TOKEN_KEY) ?? "null");
+  } catch {
+    return;
+  }
+  if (!queued) return;
+  const expiresIn = Math.floor((queued.expiresAt - Date.now()) / 1000);
+  if (expiresIn < 60) {
+    sessionStorage.removeItem(CALENDAR_TOKEN_KEY);
+    return;
+  }
+  try {
+    // If calendar sharing isn't on yet, the service retries within a minute.
+    await agentPost("/calendar/google/token", { access_token: queued.accessToken, expires_in: expiresIn });
+    sessionStorage.removeItem(CALENDAR_TOKEN_KEY);
+  } catch (e) {
+    // Not in the hive yet, or the service is down: try again on the next flush.
+    console.warn("Waggle calendar sync:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * Continue with Google: one consent screen that signs in and grants Calendar
+ * free/busy. Needs VITE_GOOGLE_CLIENT_ID; returns null if cancelled.
+ */
+export async function signInWithGoogleAndCalendar(): Promise<GoogleProfile | null> {
+  await loadGoogleIdentity();
+  const token = await requestGoogleToken(SIGN_IN_SCOPES);
+  if (!token) return null;
+  const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (!r.ok) throw new Error("Google didn't share your profile. Try again.");
+  const p = await r.json();
+  queueCalendarToken(token.access_token, token.expires_in);
+  return { sub: p.sub, email: p.email, name: p.name ?? p.email, picture: p.picture };
+}
+
 /**
  * Connect a calendar. Google uses the in-browser token flow when a client ID is
  * configured; other providers go through the agent service's OAuth routes.
@@ -58,34 +130,19 @@ export type CalendarConnectResult = { status: "connected"; account: string } | {
 export async function connectCalendar(provider: CalendarProvider, userId: Id, emailHint?: string): Promise<CalendarConnectResult> {
   if (provider === "google" && GOOGLE_CLIENT_ID) {
     await loadGoogleIdentity();
-    return new Promise((resolve) => {
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: "https://www.googleapis.com/auth/calendar.freebusy email",
-        hint: emailHint,
-        callback: async (resp: any) => {
-          if (resp.error || !resp.access_token) return resolve({ status: "cancelled" });
-          let account = emailHint ?? "Google account";
-          try {
-            const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-              headers: { Authorization: `Bearer ${resp.access_token}` },
-            });
-            account = (await r.json()).email ?? account;
-          } catch {
-            // Non-fatal; keep the hint.
-          }
-          // Hand the token to the agent service so it can query free/busy.
-          // If calendar sharing isn't on yet, the service retries within a minute.
-          agentPost("/calendar/google/token", {
-            access_token: resp.access_token,
-            expires_in: Number(resp.expires_in) || 3600,
-          }).catch((e) => console.warn("Orbit calendar sync:", e instanceof Error ? e.message : e));
-          resolve({ status: "connected", account });
-        },
-        error_callback: () => resolve({ status: "cancelled" }),
+    const token = await requestGoogleToken("https://www.googleapis.com/auth/calendar.freebusy email", emailHint);
+    if (!token) return { status: "cancelled" };
+    let account = emailHint ?? "Google account";
+    try {
+      const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${token.access_token}` },
       });
-      client.requestAccessToken();
-    });
+      account = (await r.json()).email ?? account;
+    } catch {
+      // Non-fatal; keep the hint.
+    }
+    queueCalendarToken(token.access_token, token.expires_in);
+    return { status: "connected", account };
   }
 
   if (AGENT_API_URL) {

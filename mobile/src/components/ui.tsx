@@ -6,18 +6,20 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Text,
-  TextInput,
   View,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from "react-native";
+import { Text, TextInput } from "./Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import type { User } from "../lib/types";
-import { radius, useColors } from "./theme";
+import { border, hardShadow, radius, useColors, waggle } from "./theme";
+
+// Waggle's base pieces: 2px ink outlines, honey fills for active / chosen,
+// and the hard shadow only on primary buttons.
 
 /** Scrollable page. Pass `header` when a native navigation header already covers the safe area. */
 export function Screen({ children, title, subtitle, right, header }: { children: ReactNode; title?: string; subtitle?: string; right?: ReactNode; header?: boolean }) {
@@ -26,7 +28,7 @@ export function Screen({ children, title, subtitle, right, header }: { children:
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: 16, paddingTop: header ? 16 : insets.top + 12, paddingBottom: 40, gap: 16 }}
+      contentContainerStyle={{ padding: 18, paddingTop: header ? 18 : insets.top + 14, paddingBottom: 40, gap: 16 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
@@ -49,8 +51,9 @@ export function Txt({ children, muted, small, bold, style, center }: { children:
   return (
     <Text
       style={[
-        { color: muted ? c.text2 : c.text, fontSize: small ? 13 : 15, lineHeight: small ? 18 : 21 },
-        bold && { fontWeight: "600" },
+        { color: muted ? c.text2 : c.text, fontSize: small ? 15 : 18, lineHeight: small ? 20 : 24 },
+        // Patrick Hand has one weight; "bold" text is a touch larger instead.
+        bold && { fontSize: small ? 16 : 19 },
         center && { textAlign: "center" },
         style,
       ]}
@@ -65,9 +68,10 @@ export function H2({ children }: { children: ReactNode }) {
   return <Text style={[s.h2, { color: c.text }]} accessibilityRole="header">{children}</Text>;
 }
 
+/** Section label: underlined, like the mockups' "Daily" / "Weekly". */
 export function Eyebrow({ children }: { children: ReactNode }) {
   const c = useColors();
-  return <Text style={[s.eyebrow, { color: c.text2 }]}>{children}</Text>;
+  return <Text style={[s.eyebrow, { color: c.text }]}>{children}</Text>;
 }
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
@@ -97,9 +101,10 @@ export function Button({
   style?: StyleProp<ViewStyle>;
 }) {
   const c = useColors();
-  const bg = { primary: c.accent, secondary: c.surface, ghost: "transparent", danger: "transparent" }[variant];
-  const fg = { primary: c.accentInk, secondary: c.text, ghost: c.text2, danger: c.danger }[variant];
-  const border = { primary: c.accent, secondary: c.border, ghost: "transparent", danger: c.dangerSoft }[variant];
+  const bg = { primary: c.accent, secondary: c.surface, ghost: "transparent", danger: c.surface }[variant];
+  const fg = { primary: c.text, secondary: c.text, ghost: c.text2, danger: c.danger }[variant];
+  const outline = { primary: c.border, secondary: c.border, ghost: "transparent", danger: c.danger }[variant];
+  const raised = variant === "primary" && !disabled;
   return (
     <Pressable
       accessibilityRole="button"
@@ -112,12 +117,16 @@ export function Button({
       style={({ pressed }) => [
         s.btn,
         small && s.btnSm,
-        { backgroundColor: bg, borderColor: border, opacity: disabled ? 0.45 : pressed ? 0.75 : 1 },
+        { backgroundColor: bg, borderColor: outline, opacity: disabled ? 0.45 : 1 },
+        raised && hardShadow,
+        // Pressing pushes the button into its shadow.
+        raised && pressed && { transform: [{ translateX: 2 }, { translateY: 2 }], shadowOffset: { width: 1, height: 1 } },
+        !raised && pressed && { backgroundColor: variant === "ghost" ? "transparent" : c.accentSoft },
         style,
       ]}
     >
       {loading ? <ActivityIndicator color={fg} /> : icon}
-      <Text style={{ color: fg, fontWeight: "600", fontSize: small ? 13 : 16 }}>{title}</Text>
+      <Text style={{ color: fg, fontSize: small ? 16 : 20, textDecorationLine: variant === "ghost" ? "underline" : "none" }}>{title}</Text>
     </Pressable>
   );
 }
@@ -127,11 +136,11 @@ export function Input(props: TextInputProps & { label?: string; hint?: string })
   const { label, hint, style, ...rest } = props;
   return (
     <View style={{ gap: 6 }}>
-      {label && <Txt small bold>{label}</Txt>}
+      {label && <Txt>{label}</Txt>}
       <TextInput
-        placeholderTextColor={c.text3}
+        placeholderTextColor="#8A8578"
         accessibilityLabel={label}
-        style={[s.input, { backgroundColor: c.surface, borderColor: c.border, color: c.text }, props.multiline && { minHeight: 72, textAlignVertical: "top" }, style]}
+        style={[s.input, { backgroundColor: c.surface, borderColor: c.border, color: c.text }, props.multiline && { minHeight: 80, textAlignVertical: "top" }, style]}
         {...rest}
       />
       {hint && <Txt small muted>{hint}</Txt>}
@@ -147,14 +156,14 @@ export function ToggleRow({ label, hint, icon, value, onChange, disabled, last }
       accessibilityRole="switch"
       accessibilityState={{ checked: value, disabled }}
       accessibilityLabel={label}
-      style={[s.toggleRow, { borderBottomColor: c.border, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth, opacity: disabled ? 0.45 : 1 }]}
+      style={[s.toggleRow, { borderBottomColor: waggle.dividerDashed, borderBottomWidth: last ? 0 : border, opacity: disabled ? 0.45 : 1 }]}
     >
       {icon && <Text style={{ fontSize: 18, width: 26, textAlign: "center" }}>{icon}</Text>}
       <View style={{ flex: 1 }}>
-        <Txt bold>{label}</Txt>
+        <Txt>{label}</Txt>
         {hint && <Txt small muted>{hint}</Txt>}
       </View>
-      <Switch value={value} onValueChange={onChange} disabled={disabled} trackColor={{ true: c.accent, false: c.miss }} />
+      <Switch value={value} onValueChange={onChange} disabled={disabled} trackColor={{ true: c.accent, false: c.miss }} ios_backgroundColor={c.miss} />
     </Pressable>
   );
 }
@@ -164,11 +173,12 @@ export function ToggleList({ children }: { children: ReactNode }) {
   return <View style={[s.toggleList, { borderColor: c.border, backgroundColor: c.surface }]}>{children}</View>;
 }
 
+/** Options in one ink outline; the chosen one is honey. */
 export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { key: T; label: string }[]; onChange: (v: T) => void }) {
   const c = useColors();
   return (
-    <View style={[s.segmented, { backgroundColor: c.surface2 }]} accessibilityRole="radiogroup">
-      {options.map((o) => {
+    <View style={[s.segmented, { borderColor: c.border, backgroundColor: c.surface }]} accessibilityRole="radiogroup">
+      {options.map((o, i) => {
         const active = o.key === value;
         return (
           <Pressable
@@ -179,9 +189,9 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
               Haptics.selectionAsync().catch(() => {});
               onChange(o.key);
             }}
-            style={[s.segment, active && { backgroundColor: c.surface, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } }]}
+            style={[s.segment, i > 0 && { borderLeftWidth: border, borderLeftColor: c.border }, { backgroundColor: active ? c.accent : c.surface }]}
           >
-            <Text style={{ color: active ? c.text : c.text2, fontWeight: active ? "600" : "500", fontSize: 14 }} numberOfLines={1}>{o.label}</Text>
+            <Text style={{ color: c.text, fontSize: 16 }} numberOfLines={1}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -199,9 +209,9 @@ export function Chip({ label, active, onPress }: { label: string; active?: boole
         Haptics.selectionAsync().catch(() => {});
         onPress();
       }}
-      style={[s.chip, { borderColor: active ? c.accent : c.border, backgroundColor: active ? c.accentSoft : c.surface }]}
+      style={({ pressed }) => [s.chip, { borderColor: c.border, backgroundColor: active ? c.accent : pressed ? c.accentSoft : c.surface }]}
     >
-      <Text style={{ color: c.text, fontSize: 14 }}>{label}</Text>
+      <Text style={{ color: c.text, fontSize: 17 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -213,20 +223,28 @@ export function Chips({ children }: { children: ReactNode }) {
 export function Pill({ on, text }: { on: boolean; text: string }) {
   const c = useColors();
   return (
-    <View style={[s.pill, { backgroundColor: on ? c.goodSoft : c.surface2 }]}>
-      <Text style={{ color: on ? c.good : c.text2, fontSize: 12, fontWeight: "600" }}>{on ? "✓ " : "○ "}{text}</Text>
+    <View style={[s.pill, { borderColor: c.border, borderStyle: on ? "solid" : "dashed", backgroundColor: on ? c.accent : c.surface }]}>
+      <Text style={{ color: on ? c.text : c.text2, fontSize: 15 }}>{on ? "✓ " : ""}{text}</Text>
     </View>
   );
 }
 
-export function Avatar({ user, size = 40 }: { user: Pick<User, "avatar" | "displayName">; size?: number }) {
+export type AvatarTone = "white" | "honey" | "soft";
+
+/** The initial in an ink circle; a photo when the person has one. */
+export function Avatar({ user, size = 40, tone = "white" }: { user: Pick<User, "avatar" | "displayName">; size?: number; tone?: AvatarTone }) {
+  const c = useColors();
   const { avatar } = user;
+  const bg = { white: c.surface, honey: c.accent, soft: c.accentSoft }[tone];
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: avatar.imageDataUrl ? undefined : avatar.color, alignItems: "center", justifyContent: "center", overflow: "hidden" }} accessibilityElementsHidden>
+    <View
+      style={{ width: size, height: size, borderRadius: size / 2, borderWidth: border, borderColor: c.border, backgroundColor: bg, alignItems: "center", justifyContent: "center", overflow: "hidden" }}
+      accessibilityElementsHidden
+    >
       {avatar.imageDataUrl ? (
         <Image source={{ uri: avatar.imageDataUrl }} style={{ width: size, height: size }} />
       ) : (
-        <Text style={{ fontSize: size * 0.5 }}>{avatar.emoji}</Text>
+        <Text style={{ fontSize: size * 0.48, color: c.text }}>{user.displayName.trim().charAt(0).toUpperCase() || "?"}</Text>
       )}
     </View>
   );
@@ -235,7 +253,7 @@ export function Avatar({ user, size = 40 }: { user: Pick<User, "avatar" | "displ
 export function ErrorText({ children }: { children: ReactNode }) {
   const c = useColors();
   if (!children) return null;
-  return <Text style={{ color: c.danger, fontSize: 14 }} accessibilityLiveRegion="polite">{children}</Text>;
+  return <Text style={{ color: c.danger, fontSize: 16 }} accessibilityLiveRegion="polite">{children}</Text>;
 }
 
 export function Row({ children, gap = 8, style, wrap }: { children: ReactNode; gap?: number; style?: StyleProp<ViewStyle>; wrap?: boolean }) {
@@ -243,17 +261,17 @@ export function Row({ children, gap = 8, style, wrap }: { children: ReactNode; g
 }
 
 export const s = StyleSheet.create({
-  h1: { fontSize: 30, fontWeight: "700", letterSpacing: -0.3 },
-  h2: { fontSize: 18, fontWeight: "700" },
-  eyebrow: { fontSize: 12, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
-  card: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: 16, gap: 12 },
-  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, paddingHorizontal: 18, borderRadius: radius.pill, borderWidth: 1 },
-  btnSm: { paddingVertical: 7, paddingHorizontal: 12 },
-  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 11, fontSize: 16 },
+  h1: { fontSize: 36, lineHeight: 40 },
+  h2: { fontSize: 24, lineHeight: 28 },
+  eyebrow: { fontSize: 19, textDecorationLine: "underline" },
+  card: { borderRadius: radius.lg, borderWidth: border, padding: 16, gap: 12 },
+  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 50, paddingVertical: 8, paddingHorizontal: 18, borderRadius: radius.md, borderWidth: border },
+  btnSm: { minHeight: 38, paddingVertical: 4, paddingHorizontal: 12, borderRadius: 10 },
+  input: { borderWidth: border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 18, minHeight: 46 },
   toggleRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
-  toggleList: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, overflow: "hidden" },
-  segmented: { flexDirection: "row", borderRadius: radius.pill, padding: 3, gap: 2 },
-  segment: { flex: 1, alignItems: "center", paddingVertical: 7, paddingHorizontal: 8, borderRadius: radius.pill },
-  chip: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1 },
-  pill: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: radius.pill, alignSelf: "flex-start" },
+  toggleList: { borderWidth: border, borderRadius: radius.md, overflow: "hidden" },
+  segmented: { flexDirection: "row", borderRadius: 10, borderWidth: border, overflow: "hidden" },
+  segment: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 38, paddingHorizontal: 8 },
+  chip: { minHeight: 38, justifyContent: "center", paddingVertical: 4, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: border },
+  pill: { paddingVertical: 1, paddingHorizontal: 10, borderRadius: radius.pill, borderWidth: border, alignSelf: "flex-start" },
 });

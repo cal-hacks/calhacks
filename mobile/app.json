@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "Orbit",
+    "name": "Waggle",
     "slug": "orbit",
     "scheme": "orbit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#2a78d6"
+      "backgroundColor": "#FFFDF6"
     },
     "ios": {
       "bundleIdentifier": "com.orbitfriends.app",
@@ -26,7 +26,7 @@
       "package": "com.orbitfriends.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#2a78d6"
+        "backgroundColor": "#F5C518"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -40,26 +40,26 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Orbit uses your location to track time at places you name in a goal, like the library. Friends only see places you choose to share."
+          "locationWhenInUsePermission": "Waggle uses your location to track time at places you name in a goal, like the library. Friends only see places you choose to share."
         }
       ],
       [
         "expo-contacts",
         {
-          "contactsPermission": "Orbit matches your contacts' emails and phone numbers to find friends who are already on Orbit. Contacts aren't stored or messaged."
+          "contactsPermission": "Waggle matches your contacts' emails and phone numbers to find friends who are already on Waggle. Contacts aren't stored or messaged."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Orbit lets you pick photos to share with friends and for your profile picture. It never scans your library.",
+          "photosPermission": "Waggle lets you pick photos to share with friends and for your profile picture. It never scans your library.",
           "cameraPermission": false
         }
       ],
       [
         "expo-calendar",
         {
-          "calendarPermission": "Orbit reads when you're free or busy so it can suggest times to catch up with friends. Event details stay private."
+          "calendarPermission": "Waggle reads when you're free or busy so it can suggest times to catch up with friends. Event details stay private."
         }
       ],
       "expo-apple-authentication"

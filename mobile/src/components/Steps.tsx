@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "./Text";
 import { useColors } from "./theme";
 
 const STEPS = ["Account", "Permissions", "Friends"];
@@ -12,8 +13,8 @@ export function Steps({ current }: { current: number }) {
         const done = i < current;
         const active = i === current;
         return (
-          <View key={label} style={{ paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: active ? c.accent : done ? c.goodSoft : c.surface2 }}>
-            <Text style={{ fontSize: 12, fontWeight: "600", color: active ? c.accentInk : done ? c.good : c.text3 }}>
+          <View key={label} style={{ paddingVertical: 1, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: c.border, backgroundColor: active ? c.accent : done ? c.accentSoft : c.surface }}>
+            <Text style={{ fontSize: 16, color: active || done ? c.text : c.text2 }}>
               {done ? "✓ " : ""}
               {label}
             </Text>

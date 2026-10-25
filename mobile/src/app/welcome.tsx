@@ -21,10 +21,10 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <Screen title={`Welcome, ${me.displayName.split(" ")[0]} 👋`} subtitle={`Choose what your ${APP_NAME} agent can see. Nothing is shared with friends yet: you'll pick that per friend next.`}>
+    <Screen title={`Welcome, ${me.displayName.split(" ")[0]}`} subtitle={`Choose what your ${APP_NAME} agent can see. Nothing is shared with friends yet: you'll pick that per friend next.`}>
       <Steps current={1} />
       <PermissionCards />
-      <Card style={{ backgroundColor: c.accentSoft, borderColor: c.accentSoft }}>
+      <Card style={{ backgroundColor: c.accentSoft }}>
         <Txt small>
           <Txt small bold>How your agent uses this: </Txt>
           it filters out anything you haven't allowed before the AI sees it, only posts wins (never comparisons), and when it's unsure whether something is too personal, it doesn't share.

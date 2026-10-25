@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+import { Text, TextInput } from "../../components/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useDB } from "../../lib/db";
@@ -59,7 +60,7 @@ export default function AgentScreen() {
               ])
             }
           >
-            <Txt small style={{ color: c.accent }}>Clear</Txt>
+            <Txt small style={{ color: c.text, textDecorationLine: "underline" }}>Clear</Txt>
           </Pressable>
         )}
       </View>
@@ -102,16 +103,16 @@ export default function AgentScreen() {
           placeholderTextColor={c.text3}
           multiline
           accessibilityLabel="Message your agent"
-          style={{ flex: 1, maxHeight: 120, minHeight: 40, borderWidth: 1, borderColor: c.border, borderRadius: 20, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 16, color: c.text, backgroundColor: c.bg }}
+          style={{ flex: 1, maxHeight: 120, minHeight: 44, borderWidth: 2, borderColor: c.border, borderRadius: 14, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 18, color: c.text, backgroundColor: c.bg }}
         />
         <Pressable
           onPress={() => send(text)}
           disabled={!text.trim() || sending}
           accessibilityRole="button"
           accessibilityLabel="Send"
-          style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: c.accent, opacity: !text.trim() || sending ? 0.4 : 1 }}
+          style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: c.border, alignItems: "center", justifyContent: "center", backgroundColor: c.accent, opacity: !text.trim() || sending ? 0.4 : 1 }}
         >
-          <Text style={{ color: c.accentInk, fontSize: 18, fontWeight: "700" }}>↑</Text>
+          <Text style={{ color: c.text, fontSize: 22 }}>↑</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -122,15 +123,15 @@ function Bubble({ item }: { item: ChatItem }) {
   const c = useColors();
   if (item.role === "action" || item.role === "error") {
     return (
-      <View style={{ alignSelf: "center", paddingVertical: 5, paddingHorizontal: 12, borderRadius: 999, backgroundColor: item.role === "action" ? c.goodSoft : c.dangerSoft }}>
-        <Text style={{ color: item.role === "action" ? c.good : c.danger, fontSize: 13, fontWeight: "600" }}>{item.text}</Text>
+      <View style={{ alignSelf: "center", paddingVertical: 2, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderStyle: item.role === "action" ? "solid" : "dashed", borderColor: item.role === "action" ? c.border : c.danger, backgroundColor: item.role === "action" ? c.accentSoft : c.dangerSoft }}>
+        <Text style={{ color: item.role === "action" ? c.text : c.danger, fontSize: 15 }}>{item.text}</Text>
       </View>
     );
   }
   const mine = item.role === "user";
   return (
-    <View style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, borderBottomRightRadius: mine ? 6 : 18, borderBottomLeftRadius: mine ? 18 : 6, backgroundColor: mine ? c.accent : c.surface, borderWidth: mine ? 0 : 0.5, borderColor: c.border }}>
-      <Text style={{ color: mine ? c.accentInk : c.text, fontSize: 16, lineHeight: 22 }}>{item.text}</Text>
+    <View style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 16, borderBottomRightRadius: mine ? 4 : 16, borderBottomLeftRadius: mine ? 16 : 4, backgroundColor: mine ? c.accent : c.surface, borderWidth: 2, borderColor: c.border }}>
+      <Text style={{ color: c.text, fontSize: 18, lineHeight: 24 }}>{item.text}</Text>
     </View>
   );
 }

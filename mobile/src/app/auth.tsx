@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, Text, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, View } from "react-native";
+import { Text } from "../components/Text";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { ApiError, logIn, signInWithApple, signInWithGoogle, signUp, type GoogleProfile } from "../lib/api";
 import { appleSignIn, appleSignInAvailable, googleConfigured, googleSignIn } from "../lib/integrations";
@@ -7,6 +8,7 @@ import { APP_NAME } from "../lib/meta";
 import { DEMO_PASSWORD, DEMO_USERNAME } from "../lib/seed";
 import { Button, Card, ErrorText, Input, Screen, Segmented, Txt } from "../components/ui";
 import { useColors } from "../components/theme";
+import { BeeLogo } from "../components/Bee";
 
 type Mode = "signup" | "login";
 
@@ -66,8 +68,13 @@ export default function AuthScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <Screen>
         <View style={{ gap: 10, paddingTop: 24, paddingBottom: 8 }}>
-          <Text style={{ color: c.accent, fontSize: 22, fontWeight: "700" }}>◎ {APP_NAME}</Text>
-          <Text style={{ color: c.text, fontSize: 30, fontWeight: "700", letterSpacing: -0.3 }}>Stay in each other's lives after graduation.</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <BeeLogo size={64} label={`${APP_NAME} bee logo`} />
+            <Text style={{ color: c.text, fontSize: 48, lineHeight: 54 }}>{APP_NAME}</Text>
+          </View>
+          <Text style={{ color: c.text, fontSize: 32, lineHeight: 36 }}>
+            <Text style={{ backgroundColor: c.accent }}> Stay in each other's lives </Text> after graduation.
+          </Text>
           <Txt muted>Your agent notices the wins worth sharing and turns them into plans with the friends who moved away.</Txt>
         </View>
 
@@ -143,7 +150,7 @@ function DemoGoogleSheet({ visible, onClose, onProfile }: { visible: boolean; on
       <View style={{ flex: 1, backgroundColor: c.bg, padding: 20, gap: 14 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <Txt bold style={{ fontSize: 18 }}>Continue with Google</Txt>
-          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button"><Txt style={{ color: c.accent }}>Cancel</Txt></Pressable>
+          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button"><Txt style={{ color: c.text, textDecorationLine: "underline" }}>Cancel</Txt></Pressable>
         </View>
         <Txt small muted>Demo mode: Google sign-in isn't configured in this build, so enter the account to simulate.</Txt>
         <Input label="Google email" value={email} onChangeText={setEmail} placeholder="you@gmail.com" keyboardType="email-address" autoCapitalize="none" autoFocus />

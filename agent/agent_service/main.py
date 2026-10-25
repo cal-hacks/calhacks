@@ -21,7 +21,7 @@ from app.main import router as coach_router
 from . import canvas
 from .auth import current_friend
 from .config import load_settings
-from .google_calendar import GoogleToken, TokenStore, refresh_due, sync_friend
+from .google_calendar import GoogleToken, TokenStore, refresh_due, sync_device_busy, sync_friend
 from .ingest import router as ingest_router
 from .llm import Llm
 from .stdb import StdbClient
@@ -113,6 +113,33 @@ async def google_calendar_token(body: GoogleTokenIn, friend_id: Friend):
     status = await sync_friend(app.state.stdb, app.state.google, app.state.tokens, friend_id, now=now)
     if status == "expired":
         raise HTTPException(400, "Google didn't accept that token")
+    return {"status": status}
+
+
+class BusyIn(BaseModel):
+    start: datetime
+    end: datetime
+
+
+class DeviceBusyIn(BaseModel):
+    # Busy times only: the phone never sends event titles or attendees.
+    busy: list[BusyIn] = Field(max_length=500)
+
+
+# The phone app reads the calendars on the device (one iOS permission covers
+# iCloud, Outlook and Google accounts) and sends just the busy times for the
+# next week. We turn them into free blocks, like the Google flow.
+@app.post("/calendar/device/busy")
+async def device_calendar_busy(body: DeviceBusyIn, friend_id: Friend):
+    busy = []
+    for b in body.busy:
+        if b.start.tzinfo is None or b.end.tzinfo is None:
+            raise HTTPException(422, "busy times need a time zone offset")
+        if b.end > b.start:
+            busy.append((b.start.astimezone(UTC), b.end.astimezone(UTC)))
+    status = await sync_device_busy(app.state.stdb, friend_id, busy)
+    if status == "unknown_friend":
+        raise HTTPException(404, "friend not found")
     return {"status": status}
 
 
