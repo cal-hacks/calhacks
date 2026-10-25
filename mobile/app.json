@@ -62,7 +62,16 @@
           "calendarPermission": "Waggle reads when you're free or busy so it can suggest times to catch up with friends. Event details stay private."
         }
       ],
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Orbit reads your steps, sleep and workouts so your agent can celebrate wins with your friends. Sleep is never shared.",
+          "NSHealthUpdateUsageDescription": "Orbit doesn't write to Health.",
+          "background": false
+        }
+      ],
+      "./plugins/withPodsMinimumIos"
     ],
     "experiments": {
       "typedRoutes": true

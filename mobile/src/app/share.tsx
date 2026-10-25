@@ -4,6 +4,7 @@ import * as Calendar from "expo-calendar";
 import * as Clipboard from "expo-clipboard";
 import { AGENT_URL, agentPost, pickPhotoPlace, pickScreenshot, syncBusyTimes } from "../lib/agentApi";
 import { ingestToken, setConsent, useLive } from "../lib/live";
+import { healthKitAvailable, syncHealth } from "../lib/health";
 import { Button, Card, ErrorText, Eyebrow, Input, Screen, Segmented, Txt } from "../components/ui";
 import { useColors } from "../components/theme";
 
@@ -121,6 +122,7 @@ function CalendarCard({ off }: { off: boolean }) {
       <Txt small muted>
         Reads busy times from every calendar on this phone (iCloud, Google, Outlook) for the next week, so the coordinator
         suggests times that actually work. Titles and details never leave the phone. It refreshes whenever you open Orbit.
+        Google Calendar not showing? Add your Google account in iOS Settings → Calendar → Calendar Accounts.
       </Txt>
       <OffNote show={off} what="Calendar" />
       <Button variant="secondary" title="Sync my calendar" onPress={sync} loading={a.busy} disabled={off} />
@@ -195,19 +197,35 @@ function PhotoCard({ on }: { on: boolean }) {
 
 function HealthCard({ off }: { off: boolean }) {
   const c = useColors();
+  const a = useAction();
   const [token, setToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const native = healthKitAvailable();
   const show = () => ingestToken().then(setToken).catch(() => setToken(null));
+  const sync = () =>
+    a.run(async () => {
+      const stored = await syncHealth({ force: true });
+      if (stored === null) throw new Error("Health access is off. Allow it in Settings → Health → Data Access & Devices → Orbit.");
+      return stored.length ? `Sent ${stored.join(", ")}. It syncs again when you open Orbit.` : "Nothing new since the last sync.";
+    });
 
   return (
     <Section title="🏃 Apple Health">
       <Txt small muted>
-        An iOS Shortcut sends today's steps, last night's sleep and workouts. Sleep is only ever used privately; workouts
-        and big step days can become highlights.
+        Today's steps, last night's sleep and workouts. Sleep is only ever used privately; workouts and big step days can
+        become highlights.
       </Txt>
       <OffNote show={off} what="Health" />
-      {!token ? (
-        <Button variant="secondary" title="Set up the Shortcut" onPress={show} />
+      {native ? (
+        <>
+          <Button variant="secondary" title="Sync Apple Health" onPress={sync} loading={a.busy} disabled={off} />
+          <Result error={a.error} done={a.done} />
+        </>
+      ) : !token ? (
+        <>
+          <Txt small muted>This build can't read Health directly (Expo Go), so use an iOS Shortcut instead.</Txt>
+          <Button variant="secondary" title="Set up the Shortcut" onPress={show} />
+        </>
       ) : (
         <View style={{ gap: 6 }}>
           <Txt small>1. In Shortcuts, find today's Steps, last night's Sleep Analysis and today's Workouts.</Txt>

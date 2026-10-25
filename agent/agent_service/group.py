@@ -98,11 +98,16 @@ def common_free_windows(
     min_length: timedelta = timedelta(hours=1),
     limit: int = 3,
 ) -> list[tuple[datetime, datetime]]:
-    """Earliest windows when every friend is free, at least `min_length` long."""
-    if not updates:
+    """Earliest windows when every friend is free, at least `min_length` long.
+
+    Friends with no free-time data (calendar off, or nothing synced yet) don't
+    constrain the plan: their availability is unknown, not "never free".
+    """
+    known = [u for u in updates if u.free_blocks]
+    if not known:
         return []
-    windows = updates[0].free_blocks
-    for u in updates[1:]:
+    windows = known[0].free_blocks
+    for u in known[1:]:
         windows = [
             (max(a0, b0), min(a1, b1))
             for a0, a1 in windows
