@@ -164,7 +164,8 @@ function queueRefresh() {
   });
 }
 
-const tokenKey = (userId: string) => `orbit.live.token.${userId}`;
+// Per server and database: a token from another server is refused there.
+const tokenKey = (userId: string) => `orbit.live.token.${URI}/${DB_NAME}.${userId}`;
 
 async function readToken(userId: string): Promise<string | undefined> {
   try {
@@ -194,6 +195,10 @@ export function connectAs(user: User) {
     // Signed out (or switched account) while the token was loading.
     if (connectedUserId === user.id) build(user, token);
   });
+}
+
+function forgetToken(userId: string) {
+  AsyncStorage.removeItem(tokenKey(userId)).catch(() => {});
 }
 
 function build(user: User, token: string | undefined) {
@@ -230,7 +235,16 @@ function build(user: User, token: string | undefined) {
           "SELECT * FROM my_settings",
         ]);
     })
-    .onConnectError((_ctx, e) => set({ status: "error", error: `Can't reach the server (${message(e)}).` }))
+    .onConnectError((_ctx, e) => {
+      // A saved token the server refuses (a reset, or another server's):
+      // start over without it. Demo people reclaim their seat on joining.
+      if (token && connectedUserId === user.id && /token|401/i.test(message(e))) {
+        forgetToken(user.id);
+        build(user, undefined);
+        return;
+      }
+      set({ status: "error", error: `Can't reach the server (${message(e)}).` });
+    })
     .onDisconnect(() => {
       if (conn) set({ status: "error", error: "Lost connection to the server." });
     })
@@ -429,6 +443,12 @@ export async function votePlan(planId: bigint, optionId: bigint) {
 /** What a source may be used for: shared as highlights, planning only, or off. */
 export async function setConsent(source: string, shareLevel: "highlights" | "planning_only" | "off") {
   await live()?.reducers.setConsent({ source, shareLevel });
+}
+
+/** Turn a source on for planning if it's off (connecting it means "use it"); finer choices are kept. */
+export async function shareForPlanning(source: string) {
+  const level = state.myConsent.find((c) => c.source === source)?.shareLevel ?? "off";
+  if (level === "off") await setConsent(source, "planning_only");
 }
 
 /** Roast me, Check on me and who gets nudged. Other settings keep their current values. */

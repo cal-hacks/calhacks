@@ -201,11 +201,13 @@ def test_nearby_requires_everyone_in_a_group_to_be_close():
 
 
 async def test_geocoder_caches_and_tolerates_failures(monkeypatch):
-    monkeypatch.undo()  # use the real lookup, against a fake OpenStreetMap
+    monkeypatch.undo()  # use the real lookup, against fake OpenStreetMap and Open-Meteo
     seen = []
 
     def handler(request: httpx.Request):
         seen.append(request)
+        if request.url.host == "geocoding-api.open-meteo.com":
+            return httpx.Response(200, json={})  # nothing found there either
         q = request.url.params["q"]
         if q == "austin, tx":
             return httpx.Response(200, json=[{"lat": "30.2672", "lon": "-97.7431"}])
@@ -220,8 +222,25 @@ async def test_geocoder_caches_and_tolerates_failures(monkeypatch):
     assert await geo.locate("Down, Server") is None
     assert await geo.locate("down, server") is None
     assert await geo.locate("  ") is None
-    assert [r.url.params["q"] for r in seen] == ["austin, tx", "nowhere", "down, server"]
+    osm = [r.url.params["q"] for r in seen if r.url.host == "nominatim.openstreetmap.org"]
+    assert osm == ["austin, tx", "nowhere", "down, server"]  # each city looked up once
     assert seen[0].headers["User-Agent"].startswith("Waggle/")
+
+
+async def test_geocoder_falls_back_to_open_meteo_and_picks_the_right_state(monkeypatch):
+    monkeypatch.undo()
+
+    def handler(request: httpx.Request):
+        if request.url.host == "nominatim.openstreetmap.org":
+            return httpx.Response(403)  # blocked, as it often is for cloud hosts
+        assert request.url.params["name"] == "berkeley"
+        return httpx.Response(200, json={"results": [
+            {"name": "Berkeley Springs", "admin1": "West Virginia", "country_code": "US", "latitude": 39.6, "longitude": -78.2},
+            {"name": "Berkeley", "admin1": "California", "country_code": "US", "latitude": 37.87, "longitude": -122.27},
+        ]})
+
+    geo = Geocoder(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert await geo.locate("Berkeley, CA") == (37.87, -122.27)
 
 
 async def test_fallback_meets_in_person_when_everyone_is_close():

@@ -19,6 +19,20 @@ from .llm import Llm
 log = logging.getLogger(__name__)
 
 NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
+# Backup when OpenStreetMap is down or blocks the host (it often blocks cloud servers).
+OPEN_METEO_SEARCH = "https://geocoding-api.open-meteo.com/v1/search"
+US_STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
+    "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia",
+    "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan",
+    "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York", "NC": "North Carolina",
+    "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania",
+    "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas",
+    "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+    "WI": "Wisconsin", "WY": "Wyoming",
+}
 USER_AGENT = "Waggle/0.1 (Cal Hacks 13.0 demo)"
 NEARBY_MILES = 20.0
 EARTH_MILES = 3958.8
@@ -48,6 +62,14 @@ class Geocoder:
 
     async def _lookup(self, city: str) -> LatLng | None:
         self._http = self._http or httpx.AsyncClient(timeout=5)
+        found = await self._nominatim(city)
+        if found is None:
+            found = await self._open_meteo(city)
+        if found is None:
+            log.warning("Couldn't geocode %r", city)
+        return found
+
+    async def _nominatim(self, city: str) -> LatLng | None:
         try:
             r = await self._http.get(
                 NOMINATIM_SEARCH,
@@ -58,7 +80,25 @@ class Geocoder:
             hits = r.json()
             return (float(hits[0]["lat"]), float(hits[0]["lon"])) if hits else None
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-            log.warning("Couldn't geocode %r", city)
+            return None
+
+    async def _open_meteo(self, city: str) -> LatLng | None:
+        """'berkeley, ca' → the Berkeley in California, not the biggest Berkeley anywhere."""
+        name, _, region = (p.strip() for p in city.partition(","))
+        try:
+            r = await self._http.get(OPEN_METEO_SEARCH, params={"name": name, "count": 10, "language": "en", "format": "json"})
+            r.raise_for_status()
+            hits = r.json().get("results") or []
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return None
+        if region:
+            state = US_STATES.get(region.upper(), region).lower()
+            matching = [h for h in hits if state in (str(h.get("admin1", "")).lower(), str(h.get("country", "")).lower(),
+                                                     str(h.get("country_code", "")).lower())]
+            hits = matching or hits
+        try:
+            return (float(hits[0]["latitude"]), float(hits[0]["longitude"])) if hits else None
+        except (KeyError, ValueError, TypeError):
             return None
 
 

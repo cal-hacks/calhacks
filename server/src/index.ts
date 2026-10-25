@@ -355,6 +355,83 @@ export const removeFriend = spacetimedb.reducer(
   }
 );
 
+// --- Deleting an account ---
+
+// Removes one person and everything tied to them: friendships, their 1:1
+// chats (with everything in them), their messages, reactions and votes,
+// agent posts about them, goals, check-ins, stats, photos, free time,
+// consent, settings, nudges, tokens, invites and agent activity. Group chats
+// they were in carry on without them. A friend deletes themself (friendId
+// 0); the agent service deletes by id.
+export const deleteAccount = spacetimedb.reducer(
+  { friendId: t.u64() },
+  (ctx, { friendId }) => {
+    const who = actingFriend(ctx, friendId);
+    const id = who.id;
+
+    const dropItem = (itemId: bigint) => {
+      for (const r of [...ctx.db.reaction.feedItemId.filter(itemId)]) ctx.db.reaction.delete(r);
+      const item = ctx.db.feedItem.id.find(itemId);
+      if (item) ctx.db.feedItem.delete(item);
+    };
+    const dropPlan = (planId: bigint) => {
+      for (const v of [...ctx.db.planVote.planId.filter(planId)]) ctx.db.planVote.delete(v);
+      for (const o of [...ctx.db.planOption.planId.filter(planId)]) ctx.db.planOption.delete(o);
+      const plan = ctx.db.plan.id.find(planId);
+      if (plan) ctx.db.plan.delete(plan);
+    };
+
+    // Chats: a 1:1 goes entirely; a group just loses them.
+    for (const m of [...ctx.db.membership.friendId.filter(id)]) {
+      const group = ctx.db.friendGroup.id.find(m.groupId);
+      if (group?.isDirect) {
+        for (const item of [...ctx.db.feedItem.groupId.filter(group.id)]) dropItem(item.id);
+        for (const plan of [...ctx.db.plan.groupId.filter(group.id)]) dropPlan(plan.id);
+        for (const other of [...ctx.db.membership.groupId.filter(group.id)]) ctx.db.membership.delete(other);
+        ctx.db.friendGroup.delete(group);
+      } else {
+        ctx.db.membership.delete(m);
+      }
+    }
+    // What they wrote, and agent posts about them, in the chats that remain.
+    for (const item of [...ctx.db.feedItem.friendId.filter(id)]) dropItem(item.id);
+    for (const r of [...ctx.db.reaction.iter()].filter(r => r.friendId === id)) ctx.db.reaction.delete(r);
+    for (const v of [...ctx.db.planVote.iter()].filter(v => v.friendId === id)) ctx.db.planVote.delete(v);
+
+    for (const f of [...ctx.db.friendship.fromId.filter(id), ...ctx.db.friendship.toId.filter(id)]) {
+      ctx.db.friendship.delete(f);
+    }
+    for (const row of [...ctx.db.consent.friendId.filter(id)]) ctx.db.consent.delete(row);
+    for (const row of [...ctx.db.stat.friendId.filter(id)]) ctx.db.stat.delete(row);
+    for (const row of [...ctx.db.freeBlock.friendId.filter(id)]) ctx.db.freeBlock.delete(row);
+    for (const row of [...ctx.db.goal.friendId.filter(id)]) ctx.db.goal.delete(row);
+    for (const row of [...ctx.db.checkin.friendId.filter(id)]) ctx.db.checkin.delete(row);
+    for (const photo of [...ctx.db.photo.friendId.filter(id)]) {
+      const loc = ctx.db.photoLocation.photoId.find(photo.id);
+      if (loc) ctx.db.photoLocation.delete(loc);
+      ctx.db.photo.delete(photo);
+    }
+    for (const n of [...ctx.db.nudge.iter()].filter(n => n.aboutFriendId === id || n.toFriendId === id)) {
+      ctx.db.nudge.delete(n);
+    }
+    // Others who trusted them for check-on-me nudges no longer do.
+    for (const s of [...ctx.db.friendSettings.iter()].filter(s => s.trustedFriendIds.includes(id))) {
+      ctx.db.friendSettings.friendId.update({ ...s, trustedFriendIds: s.trustedFriendIds.filter(t => t !== id) });
+    }
+    const settings = ctx.db.friendSettings.friendId.find(id);
+    if (settings) ctx.db.friendSettings.delete(settings);
+    const token = ctx.db.ingestToken.friendId.find(id);
+    if (token) ctx.db.ingestToken.delete(token);
+    for (const inv of [...ctx.db.invite.iter()].filter(i => i.kind === 'friend' && i.targetId === id)) {
+      ctx.db.invite.delete(inv);
+    }
+    for (const e of [...ctx.db.agentEvent.iter()].filter(e => e.actorFriendId === id || e.targetFriendId === id)) {
+      ctx.db.agentEvent.delete(e);
+    }
+    ctx.db.friend.delete(who);
+  }
+);
+
 // --- Group chats (friend-only): made of, and grown with, your friends ---
 
 export const createGroup = spacetimedb.reducer(
@@ -768,6 +845,20 @@ export const castReact = spacetimedb.reducer(
       if (r.friendId === who.id && r.emoji === e) return;
     }
     ctx.db.reaction.insert({ id: 0n, feedItemId, friendId: who.id, emoji: e });
+  }
+);
+
+// --- The agent service's saved logins (agent-only) ---
+
+export const putSecret = spacetimedb.reducer(
+  { key: t.string(), value: t.string() },
+  (ctx, { key, value }) => {
+    requireAgent(ctx);
+    oneOf(key, ['google_tokens', 'canvas_logins'], 'key');
+    parseJson(value, 'value');
+    const row = { key, value, updatedAt: ctx.timestamp };
+    if (ctx.db.secret.key.find(key)) ctx.db.secret.key.update(row);
+    else ctx.db.secret.insert(row);
   }
 );
 

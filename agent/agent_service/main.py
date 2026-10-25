@@ -25,6 +25,7 @@ from .google_calendar import GoogleToken, OAuthClient, TokenStore, refresh_due, 
 from .google_oauth import router as google_oauth_router
 from .ingest import router as ingest_router
 from .llm import Llm
+from .persist import Mirror
 from .stdb import StdbClient
 
 log = logging.getLogger(__name__)
@@ -52,8 +53,11 @@ async def lifespan(app: FastAPI):
         app.state.google = httpx.AsyncClient(timeout=10)
     if not hasattr(app.state, "tokens"):
         app.state.tokens = TokenStore(settings.google_token_file)
+        # The host's disk doesn't survive restarts: keep logins in the database too.
+        await app.state.tokens.attach(Mirror(app.state.stdb, "google_tokens"))
     if not hasattr(app.state, "canvas"):
         app.state.canvas = canvas.CanvasStore(settings.google_token_file.with_name(".canvas_tokens.json"))
+        await app.state.canvas.attach(Mirror(app.state.stdb, "canvas_logins"))
     if not hasattr(app.state, "llm"):
         app.state.llm = Llm(settings.anthropic_api_key)
     if not hasattr(app.state, "google_oauth"):

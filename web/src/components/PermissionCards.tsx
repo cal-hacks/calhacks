@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useDB } from "../lib/db";
 import { currentUser, permissionsOf, setCalendar, setPermissions } from "../lib/api";
 import { CALENDAR_PROVIDERS } from "../lib/meta";
+import { shareForPlanning } from "../lib/live";
 import { connectCalendar, requestLocation } from "../lib/integrations";
 import type { CalendarProvider, ScreenTimeMethod } from "../lib/types";
 import { Segmented } from "./Toggle";
@@ -34,6 +35,8 @@ export function PermissionCards({ only }: { only?: Section[] } = {}) {
   const onConnect = async (provider: CalendarProvider) => {
     setBusy(provider);
     try {
+      // On before leaving for Google, so the first sync isn't thrown away.
+      await shareForPlanning("calendar");
       const r = await connectCalendar(me.email);
       if (r.status === "connected") setCalendar(provider, true, r.account);
     } catch (e) {

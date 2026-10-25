@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from .persist import Mirror
 from .stdb import ReducerRejected, StdbClient
 
 log = logging.getLogger(__name__)
@@ -78,19 +79,32 @@ async def refresh_access_token(http: httpx.AsyncClient, oauth: OAuthClient, toke
 
 
 class TokenStore:
-    """Google tokens by friend id, in a JSON file only this user can read."""
+    """Google tokens by friend id, in a JSON file only this user can read and,
+    once `attach`ed, the module's private secret table (persist.py)."""
 
     def __init__(self, path: Path):
         self.path = path
         self.tokens: dict[int, GoogleToken] = {}
+        self.mirror: Mirror | None = None
         if path.exists():
-            for fid, t in json.loads(path.read_text()).items():
-                self.tokens[int(fid)] = GoogleToken(
-                    t["access_token"],
-                    datetime.fromisoformat(t["expires_at"]),
-                    datetime.fromisoformat(t["synced_at"]) if t.get("synced_at") else None,
-                    t.get("refresh_token"),
-                )
+            self._load(json.loads(path.read_text()))
+
+    def _load(self, data: dict) -> None:
+        for fid, t in data.items():
+            self.tokens[int(fid)] = GoogleToken(
+                t["access_token"],
+                datetime.fromisoformat(t["expires_at"]),
+                datetime.fromisoformat(t["synced_at"]) if t.get("synced_at") else None,
+                t.get("refresh_token"),
+            )
+
+    async def attach(self, mirror: Mirror) -> None:
+        """Keep tokens in `mirror` too; start from it when the disk was wiped."""
+        self.mirror = mirror
+        if not self.tokens:
+            self._load(await mirror.load())
+            if self.tokens:
+                log.info("Restored %d Google logins", len(self.tokens))
 
     def put(self, friend_id: int, token: GoogleToken) -> None:
         self.tokens[friend_id] = token
@@ -109,6 +123,8 @@ class TokenStore:
             }
             for fid, t in self.tokens.items()
         }
+        if self.mirror is not None:
+            self.mirror.push(data)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data))

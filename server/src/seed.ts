@@ -271,6 +271,7 @@ const RESETTABLE = [
   'planOption',
   'planVote',
   'agentEvent',
+  'secret',
 ] as const;
 
 export function resetAll(ctx: Ctx) {

@@ -158,6 +158,18 @@ export const ingestToken = table(
   }
 );
 
+// The agent service's saved logins (Google refresh tokens, Canvas tokens),
+// one JSON row per kind. Its host's disk is wiped on every restart, so they
+// live here instead. Private: only the database owner (the agent) reads it.
+export const secret = table(
+  {},
+  {
+    key: t.string().primaryKey(), // google_tokens | canvas_logins
+    value: t.string(), // JSON
+    updatedAt: t.timestamp(),
+  }
+);
+
 // The agent service's identity. It must also be the database owner so it can
 // read private tables over HTTP SQL.
 export const agentIdentity = table(
@@ -304,6 +316,7 @@ const spacetimedb = schema({
   planOption,
   planVote,
   agentEvent,
+  secret,
 });
 
 export default spacetimedb;
