@@ -71,7 +71,8 @@
           "background": false
         }
       ],
-      "./plugins/withPodsMinimumIos"
+      "./plugins/withPodsMinimumIos",
+      "./plugins/withSceneLifecycle"
     ],
     "experiments": {
       "typedRoutes": true
