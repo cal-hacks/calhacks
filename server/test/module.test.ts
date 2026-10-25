@@ -150,12 +150,19 @@ describe('group chat', () => {
     expect(rows('reaction')).toHaveLength(0);
   });
 
-  test('one agent highlight per friend per local day', () => {
-    const post = (kind: string, localDate: string) =>
-      run(agent, ctx => mod.postFeedItem(ctx, { groupId: groupId(), friendId: fid('Jordan'), kind, text: 'nice', replyToId: 0n, localDate }));
+  test('one agent highlight per friend per chat per local day; goal wins always get through', () => {
+    const post = (kind: string, localDate: string, chat = groupId()) =>
+      run(agent, ctx => mod.postFeedItem(ctx, { groupId: chat, friendId: fid('Jordan'), kind, text: 'nice', replyToId: 0n, localDate }));
     post('highlight', '2026-10-24');
-    expect(() => post('goal_hit', '2026-10-24')).toThrow(/already posted/);
+    expect(() => post('highlight', '2026-10-24')).toThrow(/already posted/);
+    post('goal_hit', '2026-10-24');
+    post('goal_hit', '2026-10-24');
     expect(() => post('highlight', '2026-10-30')).toThrow(/not today/);
+    expect(() => post('goal_hit', '2026-10-30')).toThrow(/not today/);
+    // The same highlight can go to Jordan's 1:1 with Maya too.
+    const inChat = (g: bigint, f: bigint) => rows('membership').some(m => m.groupId === g && m.friendId === f);
+    const dm = rows('friendGroup').find(g => g.isDirect && inChat(g.id, fid('Jordan')) && inChat(g.id, fid('Maya')));
+    post('highlight', '2026-10-24', dm.id);
   });
 
   test('roasts need roast_ok', () => {

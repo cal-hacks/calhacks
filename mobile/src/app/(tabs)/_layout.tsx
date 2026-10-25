@@ -6,7 +6,6 @@ import { useDB } from "../../lib/db";
 import { currentUser } from "../../lib/api";
 import { connectAs, syncGoals, syncProfile, useLive } from "../../lib/live";
 import { syncBusyTimes } from "../../lib/agentApi";
-import { syncHealth } from "../../lib/health";
 import { FONT, useColors, waggle } from "../../components/theme";
 
 // Ink stroke icons, filled honey when their tab is active.
@@ -68,7 +67,6 @@ export default function TabsLayout() {
   const pending = me ? db.connections.filter((x) => x.toId === me.id && x.status === "pending").length : 0;
   const live = useLive();
   const calendarOn = live.myConsent.some((r) => r.source === "calendar" && r.shareLevel !== "off");
-  const healthOn = live.myConsent.some((r) => r.source === "health" && r.shareLevel !== "off");
 
   // Join the live group as this account, then push what friends should see.
   useEffect(() => {
@@ -81,18 +79,15 @@ export default function TabsLayout() {
     // Once per connection; later changes are pushed by api.ts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live.status, me?.id]);
-  // Busy times from the phone's calendars and today's Apple Health data, now
-  // and whenever the app comes back to the foreground.
+  // Busy times from the phone's calendars, now and whenever the app comes
+  // back to the foreground.
   useEffect(() => {
-    if (live.status !== "ready" || (!calendarOn && !healthOn)) return;
-    const sync = () => {
-      if (calendarOn) syncBusyTimes().catch(() => {});
-      if (healthOn) syncHealth().catch(() => {});
-    };
+    if (live.status !== "ready" || !calendarOn) return;
+    const sync = () => syncBusyTimes().catch(() => {});
     sync();
     const sub = AppState.addEventListener("change", (state) => state === "active" && sync());
     return () => sub.remove();
-  }, [live.status, calendarOn, healthOn]);
+  }, [live.status, calendarOn]);
 
   return (
     <Tabs

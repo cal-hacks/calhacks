@@ -34,8 +34,11 @@ const FEED_KINDS = [
   'roast',
   'plan_proposal',
 ];
-// Agent posts about a friend that count toward the one-per-day limit.
-const DAILY_LIMITED_KINDS = ['highlight', 'goal_hit', 'obscure_place', 'roast'];
+// Agent posts about a friend. They carry the friend's local date.
+const FRIEND_POST_KINDS = ['highlight', 'goal_hit', 'obscure_place', 'roast'];
+// Of those, the ones limited to one a day per friend per chat. Reaching a
+// goal always gets through: it's rare, and the friend chose to share it.
+const DAILY_LIMITED_KINDS = ['highlight', 'obscure_place', 'roast'];
 const MAX_TRUSTED_FRIENDS = 2;
 const MAX_TEXT = 500;
 
@@ -685,12 +688,15 @@ export const postFeedItem = spacetimedb.reducer(
     if (kind === 'roast' && (friendId === 0n || !settingsFor(ctx, friendId).roastOk)) {
       fail('this friend has not allowed roasts');
     }
-    if (DAILY_LIMITED_KINDS.includes(kind)) {
+    if (FRIEND_POST_KINDS.includes(kind)) {
       if (friendId === 0n) fail(`${kind} posts must be about a friend`);
       checkLocalDate(ctx, localDate);
+    }
+    if (DAILY_LIMITED_KINDS.includes(kind)) {
       for (const item of ctx.db.feedItem.friendId.filter(friendId)) {
         if (
           item.createdBy === 'agent' &&
+          item.groupId === groupId &&
           item.localDate === localDate &&
           DAILY_LIMITED_KINDS.includes(item.kind)
         ) {
@@ -705,7 +711,7 @@ export const postFeedItem = spacetimedb.reducer(
       text: body,
       createdBy: 'agent',
       replyToId,
-      localDate: DAILY_LIMITED_KINDS.includes(kind) ? localDate : '',
+      localDate: FRIEND_POST_KINDS.includes(kind) ? localDate : '',
     });
   }
 );

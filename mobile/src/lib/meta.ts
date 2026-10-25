@@ -45,7 +45,6 @@ export const CATEGORIES: { key: GoalCategory; label: string; icon: string }[] = 
 export const SOURCES: { key: TrackingSource; label: string; hint: string }[] = [
   { key: "location", label: "Location", hint: "Time spent at a place you name" },
   { key: "calendar", label: "Calendar", hint: "Time in matching calendar events" },
-  { key: "health", label: "Apple Health", hint: "Workouts, steps, sleep via the iOS Shortcut" },
   { key: "screenTime", label: "Screen Time", hint: "From screenshots or the iOS Shortcut" },
   { key: "manual", label: "I'll log it", hint: "Check in by hand or by iMessage" },
 ];
@@ -65,7 +64,7 @@ export interface GoalTemplate {
 export const GOAL_TEMPLATES: GoalTemplate[] = [
   { title: "Study at the library", icon: "📚", category: "study", period: "daily", target: 120, unit: "minutes", direction: "atLeast", trackBy: "location", place: "Library" },
   { title: "Study hours", icon: "🧠", category: "study", period: "weekly", target: 15, unit: "hours", direction: "atLeast", trackBy: "calendar" },
-  { title: "Work out", icon: "🏋️", category: "fitness", period: "weekly", target: 3, unit: "times", direction: "atLeast", trackBy: "health" },
+  { title: "Work out", icon: "🏋️", category: "fitness", period: "weekly", target: 3, unit: "times", direction: "atLeast", trackBy: "manual" },
   { title: "Screen time under 3h", icon: "📵", category: "wellness", period: "daily", target: 180, unit: "minutes", direction: "atMost", trackBy: "screenTime" },
   { title: "Call a friend", icon: "📞", category: "social", period: "monthly", target: 4, unit: "times", direction: "atLeast", trackBy: "manual" },
   { title: "Read books", icon: "📖", category: "custom", period: "yearly", target: 12, unit: "books", direction: "atLeast", trackBy: "manual" },

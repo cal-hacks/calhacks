@@ -1,17 +1,14 @@
 import { useState, type ReactNode } from "react";
-import { Platform, Text, View } from "react-native";
+import { Platform, View } from "react-native";
 import * as Calendar from "expo-calendar";
-import * as Clipboard from "expo-clipboard";
-import { AGENT_URL, agentPost, connectGoogleCalendar, pickPhotoPlace, pickScreenshot, syncBusyTimes } from "../lib/agentApi";
-import { ingestToken, setConsent, useLive } from "../lib/live";
-import { healthKitAvailable, syncHealth } from "../lib/health";
-import { Button, Card, ErrorText, Eyebrow, Input, Screen, Segmented, Txt } from "../components/ui";
+import { agentPost, connectGoogleCalendar, pickPhotoPlace, pickScreenshot, syncBusyTimes } from "../lib/agentApi";
+import { setConsent, setSettings, useLive } from "../lib/live";
+import { Button, Card, ErrorText, Eyebrow, Input, Screen, Segmented, ToggleList, ToggleRow, Txt } from "../components/ui";
 import { useColors } from "../components/theme";
 
 type Level = "highlights" | "planning_only" | "off";
 
 const SOURCES: { key: string; label: string; icon: string; hint: string }[] = [
-  { key: "health", label: "Health", icon: "🏃", hint: "Steps, sleep and workouts from the Health Shortcut" },
   { key: "screen_time", label: "Screen Time", icon: "📱", hint: "Screenshots you upload" },
   { key: "photos", label: "Photos", icon: "📸", hint: "Places from photos you pick" },
   { key: "calendar", label: "Calendar", icon: "📅", hint: "Busy times only, never event details" },
@@ -48,6 +45,16 @@ export default function ShareScreen() {
         What your agent may use. Share wins lets it post highlights; Planning keeps the data private and uses it only to
         find times that work.
       </Txt>
+      <ToggleList>
+        <ToggleRow
+          last
+          icon="😜"
+          label="Roast me"
+          hint="Your agent may post a light, affectionate joke about you, like “Screen Time champion 📱👑” when you have the most screen time. Never about health, sleep or anything personal. Off by default."
+          value={live.mySettings?.roastOk ?? false}
+          onChange={(v) => setSettings({ roastOk: v }).catch(() => {})}
+        />
+      </ToggleList>
       <Card style={{ gap: 14 }}>
         {SOURCES.map((s) => (
           <View key={s.key} style={{ gap: 6 }}>
@@ -61,7 +68,6 @@ export default function ShareScreen() {
       <CalendarCard off={level("calendar") === "off"} />
       <ScreenTimeCard off={level("screen_time") === "off"} />
       <PhotoCard on={level("photos") === "highlights"} />
-      <HealthCard off={level("health") === "off"} />
       <CanvasCard off={level("canvas") === "off"} />
     </Screen>
   );
@@ -198,57 +204,6 @@ function PhotoCard({ on }: { on: boolean }) {
         </View>
       )}
       <Result error={a.error} done={a.done} />
-    </Section>
-  );
-}
-
-function HealthCard({ off }: { off: boolean }) {
-  const c = useColors();
-  const a = useAction();
-  const [token, setToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const native = healthKitAvailable();
-  const show = () => ingestToken().then(setToken).catch(() => setToken(null));
-  const sync = () =>
-    a.run(async () => {
-      const stored = await syncHealth({ force: true });
-      if (stored === null) throw new Error("Health access is off. Allow it in Settings → Health → Data Access & Devices → Waggle.");
-      return stored.length ? `Sent ${stored.join(", ")}. It syncs again when you open Waggle.` : "Nothing new since the last sync.";
-    });
-
-  return (
-    <Section title="🏃 Apple Health">
-      <Txt small muted>
-        Today's steps, last night's sleep and workouts. Sleep is only ever used privately; workouts and big step days can
-        become highlights.
-      </Txt>
-      <OffNote show={off} what="Health" />
-      {native ? (
-        <>
-          <Button variant="secondary" title="Sync Apple Health" onPress={sync} loading={a.busy} disabled={off} />
-          <Result error={a.error} done={a.done} />
-        </>
-      ) : !token ? (
-        <>
-          <Txt small muted>This build can't read Health directly (Expo Go), so use an iOS Shortcut instead.</Txt>
-          <Button variant="secondary" title="Set up the Shortcut" onPress={show} />
-        </>
-      ) : (
-        <View style={{ gap: 6 }}>
-          <Txt small>1. In Shortcuts, find today's Steps, last night's Sleep Analysis and today's Workouts.</Txt>
-          <Txt small>2. Add "Get Contents of URL": POST to</Txt>
-          <Text selectable style={{ fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12, color: c.text }}>{AGENT_URL}/ingest/health</Text>
-          <Txt small>with header Authorization: Bearer (your token) and a JSON body like {'{"steps": 8123, "sleep": [{"start": "…", "end": "…"}], "workouts": [{"kind": "run", "minutes": 30}]}'}</Txt>
-          <Txt small>3. Add a daily Personal Automation that runs it each morning.</Txt>
-          <Button
-            small
-            variant="secondary"
-            title={copied ? "Token copied" : "Copy my token"}
-            onPress={() => Clipboard.setStringAsync(token).then(() => setCopied(true))}
-          />
-          <Txt small muted>Keep the token private: it lets anyone send data as you.</Txt>
-        </View>
-      )}
     </Section>
   );
 }

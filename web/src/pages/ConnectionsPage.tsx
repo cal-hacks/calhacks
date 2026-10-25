@@ -367,15 +367,6 @@ function FriendCard({ db, me, friend }: { db: DB; me: User; friend: User }) {
             </div>
           )}
 
-          <Toggle
-            icon="😜"
-            label="Allow playful roasts"
-            hint="Lets your agent post light jokes like “Screen Time champion 📱👑”. Off by default."
-            checked={prefs.roastOk}
-            disabled={prefs.frequency === "paused"}
-            onChange={(v) => setSharing(friend.id, { roastOk: v })}
-          />
-
           <div className="row-actions wrap spread">
             <button
               type="button"

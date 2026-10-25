@@ -106,18 +106,6 @@ export default function FriendScreen() {
           </View>
         )}
 
-        <ToggleList>
-          <ToggleRow
-            last
-            icon="😜"
-            label="Allow playful roasts"
-            hint="Lets your agent post light jokes like “Screen Time champion 📱👑”. Off by default."
-            value={prefs.roastOk}
-            disabled={paused}
-            onChange={(v) => setSharing(friend.id, { roastOk: v })}
-          />
-        </ToggleList>
-
         <Button
           variant="secondary"
           title={applied ? "✓ Applied to all friends" : "Apply these settings to all friends"}

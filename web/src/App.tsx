@@ -11,6 +11,7 @@ import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { GroupPage } from "./pages/GroupPage";
 import { SharePage } from "./pages/SharePage";
+import { Confetti } from "./components/Confetti";
 
 /**
  * Route guards:
@@ -29,18 +30,21 @@ function Guard({ need, children }: { need: "guest" | "onboarding" | "member"; ch
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/auth" element={<Guard need="guest"><AuthPage /></Guard>} />
-      <Route path="/welcome" element={<Guard need="onboarding"><PermissionsPage /></Guard>} />
-      <Route element={<Guard need="member"><Layout /></Guard>}>
-        <Route index element={<DashboardPage />} />
-        <Route path="group" element={<GroupPage />} />
-        <Route path="share" element={<SharePage />} />
-        <Route path="goals" element={<GoalsPage />} />
-        <Route path="friends" element={<ConnectionsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Confetti />
+      <Routes>
+        <Route path="/auth" element={<Guard need="guest"><AuthPage /></Guard>} />
+        <Route path="/welcome" element={<Guard need="onboarding"><PermissionsPage /></Guard>} />
+        <Route element={<Guard need="member"><Layout /></Guard>}>
+          <Route index element={<DashboardPage />} />
+          <Route path="group" element={<GroupPage />} />
+          <Route path="share" element={<SharePage />} />
+          <Route path="goals" element={<GoalsPage />} />
+          <Route path="friends" element={<ConnectionsPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }

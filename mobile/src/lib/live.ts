@@ -20,9 +20,10 @@ import type {
   PlanVote,
   Reaction,
 } from "../module_bindings/types";
-import type { Connection, Goal, GoalLog, Permissions, SharingPrefs, User } from "./types";
+import type { Connection, Goal, GoalLog, Permissions, User } from "./types";
 import { mutate } from "./db";
 import { currentProgress } from "./goals";
+import { celebrate } from "./celebrate";
 import { randomSalt, sha256 } from "./hash";
 import { devHost } from "./devHost";
 
@@ -95,6 +96,26 @@ let state: LiveState = EMPTY;
 let conn: DbConnection | null = null;
 let connectedUserId: string | null = null;
 let openGroupId: bigint | null = null;
+// Newest feed item id seen once the first load finished; null until then, so
+// history doesn't set off confetti.
+let feedSeen: bigint | null = null;
+
+const maxId = (rows: Iterable<{ id: bigint }>) => {
+  let m = 0n;
+  for (const r of rows) if (r.id > m) m = r.id;
+  return m;
+};
+
+/** A friend's goal win that just arrived (not history): confetti, once per batch. */
+function celebrateNewWins(feed: FeedItem[], me: Friend | undefined, friends: Friend[]) {
+  if (feedSeen === null) return;
+  const seen = feedSeen;
+  const win = feed.find((f) => f.id > seen && f.kind === "goal_hit" && f.createdBy === "agent" && f.friendId !== me?.id);
+  feedSeen = maxId(feed) > seen ? maxId(feed) : seen;
+  if (!win) return;
+  const who = friends.find((f) => f.id === win.friendId)?.name.split(" ")[0] ?? "A friend";
+  celebrate({ title: `${who} reached a goal! 🎉`, detail: win.text });
+}
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<LiveState>) {
@@ -121,6 +142,7 @@ function queueRefresh() {
     const friends = [...db.friend.iter()];
     const friendships = [...db.myFriendships.iter()];
     mirror(me, friends, friendships);
+    celebrateNewWins(allFeed, me, friends);
     set({
       me,
       groups,
@@ -195,6 +217,7 @@ function build(user: User, token: string | undefined) {
       }
       c.subscriptionBuilder()
         .onApplied(() => {
+          feedSeen = maxId(c.db.myFeed.iter());
           queueRefresh();
           void ensureMember(c, user);
         })
@@ -219,6 +242,7 @@ export function disconnect() {
   conn = null;
   connectedUserId = null;
   openGroupId = null;
+  feedSeen = null;
   old?.disconnect();
   set(EMPTY);
 }
@@ -407,6 +431,19 @@ export async function setConsent(source: string, shareLevel: "highlights" | "pla
   await live()?.reducers.setConsent({ source, shareLevel });
 }
 
+/** Roast me, Check on me and who gets nudged. Other settings keep their current values. */
+export async function setSettings(patch: { roastOk?: boolean; checkOnMe?: boolean; trustedFriendIds?: bigint[] }) {
+  const c = live();
+  const s = state.mySettings;
+  if (!c) return;
+  await c.reducers.setFriendSettings({
+    roastOk: patch.roastOk ?? s?.roastOk ?? false,
+    checkOnMe: patch.checkOnMe ?? s?.checkOnMe ?? false,
+    trustedFriendIds: patch.trustedFriendIds ?? s?.trustedFriendIds ?? [],
+    nudgePreview: s?.nudgePreview ?? true,
+  });
+}
+
 export async function setIngestTokenHash(tokenHash: string) {
   await live()?.reducers.setIngestToken({ tokenHash });
 }
@@ -446,7 +483,9 @@ export function syncGoals(userId: string, goals: Goal[], logs: GoalLog[]) {
   const c = live();
   const me = state.me;
   if (!c || !me) return;
-  const shared = goals.filter((g) => g.userId === userId && g.shareWithFriends && !g.archived);
+  // "Stay under" goals (screen time under 3h) aren't won by reaching the
+  // number, so only "reach" goals go to the module, which marks them done.
+  const shared = goals.filter((g) => g.userId === userId && g.shareWithFriends && !g.archived && g.direction !== "atMost");
   const mine = [...c.db.goal.iter()].filter((g) => g.friendId === me.id);
   const run = async () => {
     for (const goal of shared) {
@@ -488,18 +527,6 @@ export function syncConsent(perms: Permissions) {
     const next = !on ? "off" : level === "off" ? "highlights" : level;
     if (next !== level) c.reducers.setConsent({ source, shareLevel: next }).catch(warn("consent"));
   }
-}
-
-/** Roasts are allowed if the person allowed them for any friend. */
-export function syncRoastOk(userId: string, sharing: SharingPrefs[]) {
-  const c = live();
-  const s = state.mySettings;
-  if (!c || !s) return;
-  const roastOk = sharing.some((p) => p.ownerId === userId && p.roastOk);
-  if (roastOk === s.roastOk) return;
-  c.reducers
-    .setFriendSettings({ roastOk, checkOnMe: s.checkOnMe, trustedFriendIds: s.trustedFriendIds, nudgePreview: s.nudgePreview })
-    .catch(warn("settings"));
 }
 
 export function syncProfile(user: User) {

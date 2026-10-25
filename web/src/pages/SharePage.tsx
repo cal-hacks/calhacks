@@ -1,14 +1,13 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import exifr from "exifr";
-import { AGENT_URL, agentPost, fileToBase64 } from "../lib/agentApi";
-import { ingestToken, setConsent, useLive } from "../lib/live";
-import { Segmented } from "../components/Toggle";
+import { agentPost, fileToBase64 } from "../lib/agentApi";
+import { setConsent, setSettings, useLive } from "../lib/live";
+import { Segmented, Toggle } from "../components/Toggle";
 
 type Level = "highlights" | "planning_only" | "off";
 
 const SOURCES: { key: string; label: string; hint: string }[] = [
-  { key: "health", label: "Health", hint: "Steps, sleep and workouts from the Health Shortcut" },
   { key: "screen_time", label: "Screen Time", hint: "Screenshots you upload" },
   { key: "photos", label: "Photos", hint: "Places from photos you upload" },
   { key: "calendar", label: "Calendar", hint: "Free/busy only, never event details" },
@@ -54,6 +53,17 @@ export function SharePage() {
       </header>
 
       <section className="card stack-sm">
+        <h2 className="card-title">Your agent</h2>
+        <Toggle
+          icon="😜"
+          label="Roast me"
+          hint="Your agent may post a light, affectionate joke about you, like “Screen Time champion 📱👑” when you have the most screen time. Never about health, sleep or anything personal. Off by default."
+          checked={live.mySettings?.roastOk ?? false}
+          onChange={(v) => setSettings({ roastOk: v }).catch(() => {})}
+        />
+      </section>
+
+      <section className="card stack-sm">
         <h2 className="card-title">What your agent can use</h2>
         {SOURCES.map((s) => (
           <div key={s.key} className="consent-row">
@@ -74,7 +84,6 @@ export function SharePage() {
       <div className="grid-2">
         <ScreenTimeCard off={level("screen_time") === "off"} />
         <PhotoCard on={level("photos") === "highlights"} />
-        <HealthCard off={level("health") === "off"} />
         <CanvasCard off={level("canvas") === "off"} />
         <section className="card stack-sm">
           <h2 className="card-title">Google Calendar</h2>
@@ -231,38 +240,6 @@ function PhotoCard({ on }: { on: boolean }) {
         error={error}
         done={result && <>{result.place_name}: "{result.caption}" (unusual: {Math.round(result.obscurity_score * 100)}%)</>}
       />
-    </Card>
-  );
-}
-
-function HealthCard({ off }: { off: boolean }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    if (shown) ingestToken().then(setToken).catch(() => setToken(null));
-  }, [shown]);
-
-  return (
-    <Card title="Apple Health">
-      <p className="muted small">
-        An iOS Shortcut sends today's steps, last night's sleep and workouts. Sleep is only ever used privately;
-        workouts and big step days can become highlights.
-      </p>
-      {off && <p className="small warn">Health is off above.</p>}
-      {!shown ? (
-        <button type="button" className="btn btn-secondary" onClick={() => setShown(true)}>Set up the Shortcut</button>
-      ) : (
-        <ol className="small stack-sm shortcut-steps">
-          <li>In Shortcuts, make a shortcut that finds today's <em>Steps</em>, last night's <em>Sleep Analysis</em> and today's <em>Workouts</em>.</li>
-          <li>
-            Add <em>Get Contents of URL</em>: POST to <code>{AGENT_URL}/ingest/health</code>, header{" "}
-            <code>Authorization: Bearer {token ?? "…"}</code>, JSON body like{" "}
-            <code>{'{"steps": 8123, "sleep": [{"start": "…", "end": "…"}], "workouts": [{"kind": "run", "minutes": 30, "distance_km": 5}]}'}</code>
-          </li>
-          <li>Add a daily Personal Automation that runs it each morning.</li>
-          <li className="muted">Keep the token private: it lets anyone send data as you. Signing out and in again makes a new one.</li>
-        </ol>
-      )}
     </Card>
   );
 }

@@ -8,6 +8,7 @@ import { hydrate, useDB, useHydrated } from "../lib/db";
 import { currentUser } from "../lib/api";
 import { syncScreenTimeGoals } from "../lib/screenTime";
 import { FONT, useColors } from "../components/theme";
+import { Confetti } from "../components/Confetti";
 
 export default function RootLayout() {
   const hydrated = useHydrated();
@@ -44,6 +45,7 @@ export default function RootLayout() {
     >
       <StatusBar style="dark" />
       <Routes />
+      <Confetti />
     </ThemeProvider>
   );
 }

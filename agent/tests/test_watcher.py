@@ -200,27 +200,49 @@ async def test_reseed_is_not_news():
     assert (w.last_checkin, w.last_message) == (20, 90)
     # Real news after the reseed is still picked up.
     db.tables["checkin"].append({"id": 21, "friend_id": 1, "text": "ran a 10K", "source": "app"})
-    db.tables["membership"] = [{"friend_id": 1, "group_id": 8}]
+    db.tables["membership"] = [{"friend_id": 1, "group_id": 8}, {"friend_id": 2, "group_id": 8}]
     await w.tick(no_updates)
     assert len(db.calls) == 1
 
 
-async def test_posts_go_to_a_group_not_a_one_to_one():
+async def test_posts_go_to_every_chat_the_friend_is_in():
     db, w = setup(reply=None)
-    # Maya is also in a 1:1 (id 3, lower) with Sam.
-    db.tables["friend_group"].append({"id": 3, "is_direct": True})
-    db.tables["membership"] += [{"friend_id": 1, "group_id": 3}, {"friend_id": 2, "group_id": 3}]
+    # Maya is in the group (7) and a 1:1 with Sam (3); a 1:1 left by an
+    # unfriended friend (4) has only Maya in it.
+    db.tables["friend_group"] += [{"id": 3, "is_direct": True}, {"id": 4, "is_direct": True}]
+    db.tables["membership"] += [{"friend_id": 1, "group_id": 3}, {"friend_id": 2, "group_id": 3},
+                                {"friend_id": 1, "group_id": 4}]
     await w.tick(no_updates)
     db.tables["checkin"].append({"id": 11, "friend_id": 1, "text": "ran a 10K", "source": "app"})
     await w.tick(no_updates)
-    (_, args), = db.calls
-    assert args["groupId"] == 7
-    # Only 1:1s: no post at all.
+    assert sorted(a["groupId"] for _, a in db.calls) == [3, 7]
+    # Only a 1:1: it still gets there.
     db.calls.clear()
     db.tables["membership"] = [m for m in db.tables["membership"] if m["group_id"] != 7]
     db.tables["checkin"].append({"id": 12, "friend_id": 1, "text": "another 10K", "source": "app"})
     await w.tick(no_updates)
-    assert db.calls == []
+    assert [a["groupId"] for _, a in db.calls] == [3]
+
+
+async def test_goal_win_is_posted_even_if_claude_would_skip_it():
+    db, w = setup(reply={"share": False, "text": "Sam finished Read 2 books 📚 Who's next?"})
+    await w.tick(no_updates)
+    db.tables["goal"][0]["status"] = "done"
+    await w.tick(no_updates)
+    (_, args), = db.calls
+    assert args["kind"] == "goal_hit" and args["text"].startswith("Sam finished")
+
+
+async def test_screen_time_comparisons_stay_in_group_chats():
+    db, w = setup(reply=None)
+    db.tables["friend_group"].append({"id": 3, "is_direct": True})
+    db.tables["membership"] += [{"friend_id": 1, "group_id": 3}, {"friend_id": 2, "group_id": 3}]
+    await w.tick(no_updates)
+    stat(db, 101, 2, "screen_time", {"daily_avg_hours": 6.4}, source="upload")
+    stat(db, 102, 1, "screen_time", {"daily_avg_hours": 2.1}, source="upload")
+    await w.tick(no_updates)
+    # Maya's praise and Sam's opted-in roast, both only in the group.
+    assert sorted((a["kind"], a["groupId"]) for _, a in db.calls) == [("highlight", 7), ("roast", 7)]
 
 
 async def test_new_chats_do_not_reset_the_watcher():
