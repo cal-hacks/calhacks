@@ -9,9 +9,6 @@ import { Avatar } from "../components/Avatar";
 import { Toggle } from "../components/Toggle";
 import { PermissionCards } from "../components/PermissionCards";
 
-const EMOJI = ["🙂", "📚", "🏃", "🎧", "🌻", "🚀", "🌊", "🍜", "🎨", "🪴", "⚡", "🐢", "🦙", "☕", "🎮", "🧗"];
-const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
-
 export function SettingsPage() {
   const me = currentUser(useDB())!;
   return (
@@ -93,26 +90,10 @@ function ProfileSection({ me }: { me: User }) {
                 </label>
                 {draft.avatar.imageDataUrl && (
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => set("avatar", { ...draft.avatar, imageDataUrl: undefined })}>
-                    Use emoji instead
+                    Use my initial
                   </button>
                 )}
               </div>
-              {!draft.avatar.imageDataUrl && (
-                <>
-                  <div className="emoji-grid" role="radiogroup" aria-label="Avatar emoji">
-                    {EMOJI.map((e) => (
-                      <button type="button" key={e} role="radio" aria-checked={draft.avatar.emoji === e} className={draft.avatar.emoji === e ? "is-active" : ""} onClick={() => set("avatar", { ...draft.avatar, emoji: e })}>
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="swatches" role="radiogroup" aria-label="Avatar color">
-                    {COLORS.map((c) => (
-                      <button type="button" key={c} role="radio" aria-checked={draft.avatar.color === c} aria-label={c} className={draft.avatar.color === c ? "is-active" : ""} style={{ background: c }} onClick={() => set("avatar", { ...draft.avatar, color: c })} />
-                    ))}
-                  </div>
-                </>
-              )}
             </div>
           </div>
         </div>

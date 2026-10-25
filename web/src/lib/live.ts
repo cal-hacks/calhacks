@@ -9,6 +9,7 @@ import type {
   FriendSettings,
   Goal as LiveGoal,
   Membership,
+  Photo,
   Plan,
   PlanOption,
   PlanVote,
@@ -18,7 +19,7 @@ import type { Goal, GoalLog, Permissions, SharingPrefs, User } from "./types";
 import { currentProgress } from "./goals";
 import { randomSalt, sha256 } from "./hash";
 
-// The shared, live side of Orbit: the group chat, agent posts, plans and
+// The shared, live side of Waggle: the group chat, agent posts, plans and
 // whatever each friend chose to share. It runs on the SpacetimeDB module in
 // server/. Accounts, the friend list and goal history stay in db.ts; the
 // sync* functions push the parts other people (and their agents) should see.
@@ -28,8 +29,31 @@ import { randomSalt, sha256 } from "./hash";
 const URI = import.meta.env.VITE_SPACETIMEDB_URI || `ws://${location.hostname}:3000`;
 const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB || "calhacks";
 const GROUP_INVITE = "CATCHUP";
+const INVITE_KEY = "waggle.invite";
 
-/** Seeded Orbit people and the claim codes of their seeded group members. */
+/** Remember the code from an invite link (/j/:code) until the account joins. */
+export function rememberInvite(code: string) {
+  try {
+    sessionStorage.setItem(INVITE_KEY, code.trim().toUpperCase());
+  } catch {
+    // Storage blocked: the default hive invite still works.
+  }
+}
+
+function pendingInvite(): string {
+  try {
+    return sessionStorage.getItem(INVITE_KEY) || GROUP_INVITE;
+  } catch {
+    return GROUP_INVITE;
+  }
+}
+
+/** The link friends open to land in this hive. */
+export function inviteLink(): string {
+  return `${location.origin}/j/${pendingInvite()}`;
+}
+
+/** Seeded people and the claim codes of their seeded group members. */
 const CLAIM_CODES: Record<string, string> = {
   u_demo: "RILEY-1",
   u_maya: "MAYA-1",
@@ -53,6 +77,7 @@ export interface LiveState {
   votes: PlanVote[];
   goals: LiveGoal[];
   checkins: Checkin[];
+  photos: Photo[];
   myConsent: Consent[];
   mySettings?: FriendSettings;
 }
@@ -68,6 +93,7 @@ const EMPTY: LiveState = {
   votes: [],
   goals: [],
   checkins: [],
+  photos: [],
   myConsent: [],
 };
 
@@ -108,6 +134,7 @@ function queueRefresh() {
       votes: [...db.planVote.iter()],
       goals: [...db.goal.iter()],
       checkins: [...db.checkin.iter()].sort(byCreated),
+      photos: [...db.photo.iter()],
       myConsent: [...db.myConsent.iter()],
       mySettings: [...db.mySettings.iter()][0],
     });
@@ -136,7 +163,7 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Connect this Orbit account to the shared group. Safe to call on every render. */
+/** Connect this Waggle account to the shared group. Safe to call on every render. */
 export function connectAs(user: User) {
   if (connectedUserId === user.id) return;
   disconnect();
@@ -151,7 +178,7 @@ export function connectAs(user: User) {
       saveToken(user.id, token);
       for (const table of [
         c.db.friend, c.db.friendGroup, c.db.membership, c.db.feedItem, c.db.reaction, c.db.plan,
-        c.db.planOption, c.db.planVote, c.db.goal, c.db.checkin, c.db.myFriend, c.db.myConsent, c.db.mySettings,
+        c.db.planOption, c.db.planVote, c.db.goal, c.db.checkin, c.db.photo, c.db.myFriend, c.db.myConsent, c.db.mySettings,
       ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?(cb: () => void): void }[]) {
         table.onInsert(queueRefresh);
         table.onDelete(queueRefresh);
@@ -169,7 +196,7 @@ export function connectAs(user: User) {
           "SELECT * FROM friend", "SELECT * FROM friend_group", "SELECT * FROM membership",
           "SELECT * FROM feed_item", "SELECT * FROM reaction", "SELECT * FROM plan",
           "SELECT * FROM plan_option", "SELECT * FROM plan_vote", "SELECT * FROM goal",
-          "SELECT * FROM checkin", "SELECT * FROM my_friend", "SELECT * FROM my_consent",
+          "SELECT * FROM checkin", "SELECT * FROM photo", "SELECT * FROM my_friend", "SELECT * FROM my_consent",
           "SELECT * FROM my_settings",
         ]);
     })
@@ -201,7 +228,7 @@ async function ensureMember(c: DbConnection, user: User) {
       await c.reducers.claimFriend({ claimCode: code });
     } else {
       await c.reducers.joinGroup({
-        inviteCode: GROUP_INVITE,
+        inviteCode: pendingInvite(),
         name: user.displayName,
         city: user.city,
         timezone: user.timezone,
@@ -242,6 +269,19 @@ export async function setConsent(source: string, shareLevel: "highlights" | "pla
   await live()?.reducers.setConsent({ source, shareLevel });
 }
 
+/** Roast me, Check on me and who gets nudged. Other settings keep their current values. */
+export async function setSettings(patch: { roastOk?: boolean; checkOnMe?: boolean; trustedFriendIds?: bigint[] }) {
+  const c = live();
+  const s = state.mySettings;
+  if (!c) return;
+  await c.reducers.setFriendSettings({
+    roastOk: patch.roastOk ?? s?.roastOk ?? false,
+    checkOnMe: patch.checkOnMe ?? s?.checkOnMe ?? false,
+    trustedFriendIds: patch.trustedFriendIds ?? s?.trustedFriendIds ?? [],
+    nudgePreview: s?.nudgePreview ?? true,
+  });
+}
+
 export async function setIngestTokenHash(tokenHash: string) {
   await live()?.reducers.setIngestToken({ tokenHash });
 }
@@ -273,7 +313,7 @@ export function forgetIngestToken() {
 // ---------- sync from the local store (api.ts calls these) ----------
 
 function warn(what: string) {
-  return (e: unknown) => console.warn(`Orbit live sync (${what}):`, message(e));
+  return (e: unknown) => console.warn(`Waggle live sync (${what}):`, message(e));
 }
 
 /** Shared goals, with this period's progress, so agents can celebrate them. */
@@ -305,7 +345,7 @@ export function syncGoals(userId: string, goals: Goal[], logs: GoalLog[]) {
 }
 
 /**
- * Orbit's device permissions gate each source: revoking one turns it off, and
+ * Device permissions gate each source: revoking one turns it off, and
  * granting one turns it on (as highlights) only if it was off. Finer choices
  * (planning only) are made on the Share page and kept.
  */
@@ -341,6 +381,18 @@ export function syncProfile(user: User) {
   live()
     ?.reducers.updateProfile({ name: user.displayName, city: user.city, timezone: user.timezone, avatar: user.avatar.emoji })
     .catch(warn("profile"));
+}
+
+// ---------- selectors ----------
+
+/** Friends in my hive, me included, in join order. */
+export function hiveMembers(s: LiveState): Friend[] {
+  const ids = s.members.filter((m) => m.groupId === s.group?.id).map((m) => m.friendId);
+  return ids.map((id) => s.friends.find((f) => f.id === id)).filter((f): f is Friend => !!f);
+}
+
+export function firstName(name: string | undefined): string {
+  return (name ?? "").trim().split(/\s+/)[0] || "Someone";
 }
 
 // ---------- React ----------

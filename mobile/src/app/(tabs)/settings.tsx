@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, ScrollView, View } from "react-native";
 import { resetDB, useDB } from "../../lib/db";
 import { ApiError, changePassword, currentUser, deleteAccount, logOut, updateProfile } from "../../lib/api";
 import { pickAvatar } from "../../lib/integrations";
@@ -7,10 +7,7 @@ import { TIMEZONES } from "../../lib/meta";
 import type { User } from "../../lib/types";
 import { Avatar, Button, Card, Chip, ErrorText, Eyebrow, H2, Input, Row, Screen, ToggleList, ToggleRow, Txt } from "../../components/ui";
 import { PermissionCards } from "../../components/PermissionCards";
-import { useColors } from "../../components/theme";
 
-const EMOJI = ["🙂", "📚", "🏃", "🎧", "🌻", "🚀", "🌊", "🍜", "🎨", "🪴", "⚡", "🐢", "🦙", "☕", "🎮", "🧗"];
-const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
 
 export default function SettingsScreen() {
   const me = currentUser(useDB());
@@ -42,7 +39,6 @@ function draftOf(me: User) {
 }
 
 function ProfileSection({ me }: { me: User }) {
-  const c = useColors();
   const [draft, setDraft] = useState(() => draftOf(me));
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,37 +81,8 @@ function ProfileSection({ me }: { me: User }) {
         <H2>Edit profile</H2>
         <Row wrap>
           <Button small variant="secondary" title="Choose photo" onPress={onPhoto} />
-          {draft.avatar.imageDataUrl && <Button small variant="ghost" title="Use emoji instead" onPress={() => set("avatar", { ...draft.avatar, imageDataUrl: undefined })} />}
+          {draft.avatar.imageDataUrl && <Button small variant="ghost" title="Use my initial" onPress={() => set("avatar", { ...draft.avatar, imageDataUrl: undefined })} />}
         </Row>
-        {!draft.avatar.imageDataUrl && (
-          <>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }} accessibilityRole="radiogroup" accessibilityLabel="Avatar emoji">
-              {EMOJI.map((e) => (
-                <Pressable
-                  key={e}
-                  onPress={() => set("avatar", { ...draft.avatar, emoji: e })}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: draft.avatar.emoji === e }}
-                  style={{ width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: draft.avatar.emoji === e ? c.accentSoft : c.surface2, borderWidth: 1, borderColor: draft.avatar.emoji === e ? c.accent : "transparent" }}
-                >
-                  <Text style={{ fontSize: 18 }}>{e}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Row wrap>
-              {COLORS.map((col) => (
-                <Pressable
-                  key={col}
-                  onPress={() => set("avatar", { ...draft.avatar, color: col })}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`Color ${col}`}
-                  accessibilityState={{ selected: draft.avatar.color === col }}
-                  style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: col, borderWidth: 3, borderColor: draft.avatar.color === col ? c.text : c.surface }}
-                />
-              ))}
-            </Row>
-          </>
-        )}
 
         <Input label="Display name" value={draft.displayName} onChangeText={(v) => set("displayName", v)} />
         <Input label="Bio" value={draft.bio} onChangeText={(v) => set("bio", v)} multiline maxLength={160} placeholder="What are you up to these days?" hint={`${draft.bio.length}/160`} />

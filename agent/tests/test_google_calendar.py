@@ -261,3 +261,37 @@ def test_token_endpoint_needs_ingest_token(api, header):
                     headers={"Authorization": header} if header else {})
     assert r.status_code == 401
     assert tokens.tokens == {} and db.calls == []
+
+
+# --- POST /calendar/device/busy (the phone's own calendars) ---
+
+
+def test_device_busy_stores_free_blocks_around_busy_times(api):
+    client, db, tokens = api
+    # Busy for all of tomorrow and the day after: no free time may land there.
+    busy = (datetime.now(UTC) + timedelta(days=1), datetime.now(UTC) + timedelta(days=3))
+    r = client.post(
+        "/calendar/device/busy",
+        json={"busy": [{"start": busy[0].isoformat(), "end": busy[1].isoformat()}]},
+        headers={"Authorization": f"Bearer {MAYA_TOKEN}"},
+    )
+    assert r.status_code == 200 and r.json() == {"status": "synced"}
+    blocks = db.blocks()
+    assert blocks  # the rest of the week still has free evenings
+    assert all(e <= busy[0] or s >= busy[1] for s, e in blocks)
+    assert tokens.tokens == {}  # nothing about the device calendar is kept
+
+
+def test_device_busy_reports_skip_when_consent_off(api):
+    client, db, tokens = api
+    db.reject = "calendar is off for this friend"
+    r = client.post("/calendar/device/busy", json={"busy": []}, headers={"Authorization": f"Bearer {MAYA_TOKEN}"})
+    assert r.json() == {"status": "skipped"}
+
+
+def test_device_busy_needs_time_zones_and_a_token(api):
+    client, db, tokens = api
+    naive = {"busy": [{"start": "2030-01-01T23:00:00", "end": "2030-01-02T01:00:00"}]}
+    assert client.post("/calendar/device/busy", json=naive, headers={"Authorization": f"Bearer {MAYA_TOKEN}"}).status_code == 422
+    assert client.post("/calendar/device/busy", json={"busy": []}).status_code == 401
+    assert db.calls == []

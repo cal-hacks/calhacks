@@ -1,15 +1,16 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "../components/Text";
 import { router } from "expo-router";
-import { useDB } from "../../lib/db";
-import { currentUser, friendsOf, loadSampleData } from "../../lib/api";
-import { CATEGORIES, PERIODS } from "../../lib/meta";
-import { WINDOW, daysAgo, formatAmount, hitRate, streak, studyHoursBetween, studyHoursByDay } from "../../lib/goals";
-import { PERIOD_NOUN, addDays, fromISODate, periodEnd, periodStart, shiftPeriod } from "../../lib/dates";
-import type { Goal, GoalLog } from "../../lib/types";
-import { BarChart, type Bar } from "../../components/BarChart";
-import { Button, Card, Eyebrow, H2, Row, Screen, Segmented, Txt } from "../../components/ui";
-import { useColors } from "../../components/theme";
+import { useDB } from "../lib/db";
+import { currentUser, friendsOf, loadSampleData } from "../lib/api";
+import { CATEGORIES, PERIODS } from "../lib/meta";
+import { WINDOW, daysAgo, formatAmount, hitRate, streak, studyHoursBetween, studyHoursByDay } from "../lib/goals";
+import { PERIOD_NOUN, addDays, fromISODate, periodEnd, periodStart, shiftPeriod } from "../lib/dates";
+import type { Goal, GoalLog } from "../lib/types";
+import { BarChart, type Bar } from "../components/BarChart";
+import { Button, Card, Eyebrow, H2, Row, Screen, Segmented, Txt } from "../components/ui";
+import { useColors } from "../components/theme";
 
 type Range = "30d" | "12w";
 
@@ -32,12 +33,12 @@ export default function DashboardScreen() {
   const friends = friendsOf(db, me.id);
   const now = new Date();
   const subtitle = friends.length
-    ? `Here's how your goals are going. Your agent is keeping ${friends.length} friend${friends.length > 1 ? "s" : ""} in the loop.`
+    ? `Here's how your goals are going. Your bee is keeping ${friends.length} friend${friends.length > 1 ? "s" : ""} in the loop.`
     : "Here's how your goals are going.";
 
   if (goals.length === 0) {
     return (
-      <Screen title={greeting(me.displayName)} subtitle={subtitle}>
+      <Screen header subtitle={subtitle}>
         <Card style={{ alignItems: "center", paddingVertical: 28 }}>
           <Txt muted center>Your dashboard fills in once you have goals. Set one, or load a few months of sample data to see how it works.</Txt>
           <Row>
@@ -90,7 +91,7 @@ export default function DashboardScreen() {
   const recent = [...logs].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 6);
 
   return (
-    <Screen title={greeting(me.displayName)} subtitle={subtitle}>
+    <Screen header subtitle={subtitle}>
       <Card>
         <Eyebrow>Study hours this month</Eyebrow>
         <Text style={{ color: c.text, fontSize: 56, fontWeight: "700", letterSpacing: -1 }}>

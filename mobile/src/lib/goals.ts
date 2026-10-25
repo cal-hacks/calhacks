@@ -126,3 +126,19 @@ export function formatAmount(goal: Goal, amount: number): string {
 export function daysAgo(dateStr: string): number {
   return Math.round((Date.now() - fromISODate(dateStr).getTime()) / 86_400_000);
 }
+
+const UNITS: Record<string, string> = {
+  step: "steps", steps: "steps", min: "minutes", mins: "minutes", minute: "minutes", minutes: "minutes",
+  hr: "hours", hrs: "hours", hour: "hours", hours: "hours", time: "times", times: "times", x: "times",
+  book: "books", books: "books", page: "pages", pages: "pages", km: "km", mile: "miles", miles: "miles",
+};
+
+/** "8,000 steps" → 8000 steps; "Run 3 times" → 3 times; otherwise once per period. */
+export function parseGoal(text: string): { target: number; unit: string } {
+  const m = text.match(/(\d[\d,.]*)\s*(steps?|mins?|minutes?|hrs?|hours?|times?|x|books?|pages?|km|miles?)\b/i);
+  if (m) {
+    const n = Number(m[1].replace(/,/g, ""));
+    if (n > 0) return { target: n, unit: UNITS[m[2].toLowerCase()] ?? "times" };
+  }
+  return { target: 1, unit: "times" };
+}

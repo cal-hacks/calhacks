@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, TextInput, View } from "react-native";
+import { Text } from "../components/Text";
 import { router } from "expo-router";
-import { useDB } from "../../lib/db";
-import { currentUser, deleteGoal, logProgress } from "../../lib/api";
-import { CATEGORIES, GOAL_TEMPLATES, PERIODS, SOURCES } from "../../lib/meta";
-import { currentProgress, formatAmount, streak } from "../../lib/goals";
-import { PERIOD_NOUN } from "../../lib/dates";
-import type { DB, Goal } from "../../lib/types";
-import { Button, Card, Chip, Chips, ErrorText, Eyebrow, Row, Screen, Txt } from "../../components/ui";
-import { useColors } from "../../components/theme";
+import { useDB } from "../lib/db";
+import { currentUser, deleteGoal, logProgress } from "../lib/api";
+import { CATEGORIES, GOAL_TEMPLATES, PERIODS, SOURCES } from "../lib/meta";
+import { currentProgress, formatAmount, streak } from "../lib/goals";
+import { PERIOD_NOUN } from "../lib/dates";
+import type { DB, Goal } from "../lib/types";
+import { Button, Card, Chip, Chips, ErrorText, Eyebrow, Row, Screen, Txt } from "../components/ui";
+import { useColors } from "../components/theme";
+import { Icon } from "../components/waggle";
 
 export default function GoalsScreen() {
   const db = useDB();
@@ -18,15 +20,15 @@ export default function GoalsScreen() {
 
   return (
     <Screen
-      title="Goals"
-      subtitle="Set goals for the day, week, month or year. Your agent tracks them and can share wins with friends you choose."
+      header
+      subtitle="Set goals for the day, week, month or year. Your bee tracks them and can share wins with friends you choose."
       right={<Button small title="+ New" onPress={() => router.push("/goal/new")} />}
     >
       <Pressable onPress={() => router.push("/agent")} accessibilityRole="button" style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
         <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <Text style={{ fontSize: 22 }}>💬</Text>
+          <Icon name="chat" size={26} strokeWidth={2} />
           <View style={{ flex: 1 }}>
-            <Txt bold>Just tell your agent</Txt>
+            <Txt bold>Just tell your bee</Txt>
             <Txt small muted>“I studied 2 hours at the library” or “I want to run 3 times a week”</Txt>
           </View>
           <Txt muted style={{ fontSize: 20 }}>›</Txt>

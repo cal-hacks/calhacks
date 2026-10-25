@@ -1,13 +1,14 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Text } from "../components/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useDB } from "../../lib/db";
-import { currentUser } from "../../lib/api";
-import { agentConfigured, chatFor, clearChat, sendToAgent } from "../../lib/agent";
-import type { ChatItem } from "../../lib/types";
-import { Chip, Chips, Txt } from "../../components/ui";
-import { useColors } from "../../components/theme";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useDB } from "../lib/db";
+import { currentUser } from "../lib/api";
+import { agentConfigured, chatFor, clearChat, sendToAgent } from "../lib/agent";
+import type { ChatItem } from "../lib/types";
+import { Chip, Chips, Txt } from "../components/ui";
+import { useColors } from "../components/theme";
 
 const SUGGESTIONS = [
   "I studied 2 hours at the library today",
@@ -20,7 +21,7 @@ export default function AgentScreen() {
   const db = useDB();
   const c = useColors();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
+  const headerHeight = useHeaderHeight();
   const me = currentUser(db);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -42,11 +43,10 @@ export default function AgentScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={-tabBarHeight + 8}>
-      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: 8, flexDirection: "row", alignItems: "flex-end", gap: 12 }}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
+      <View style={{ paddingTop: 12, paddingHorizontal: 16, paddingBottom: 8, flexDirection: "row", alignItems: "flex-end", gap: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: c.text, fontSize: 30, fontWeight: "700", letterSpacing: -0.3 }} accessibilityRole="header">Agent</Text>
-          <Txt muted small>Tell your agent what you did or what you want to work on. It sets goals and logs progress for you.</Txt>
+          <Txt muted small>Tell your bee what you did or what you want to work on. It sets goals and logs progress for you.</Txt>
         </View>
         {items.length > 0 && (
           <Pressable
@@ -59,7 +59,7 @@ export default function AgentScreen() {
               ])
             }
           >
-            <Txt small style={{ color: c.accent }}>Clear</Txt>
+            <Txt small style={{ color: c.link, textDecorationLine: "underline" }}>Clear</Txt>
           </Pressable>
         )}
       </View>
@@ -94,14 +94,14 @@ export default function AgentScreen() {
         )}
       </ScrollView>
 
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12, borderTopWidth: 0.5, borderTopColor: c.border, backgroundColor: c.surface }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12, paddingBottom: insets.bottom + 12, borderTopWidth: 2, borderTopColor: c.border, backgroundColor: c.bg }}>
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder="Message your agent"
+          placeholder="Message your bee"
           placeholderTextColor={c.text3}
           multiline
-          accessibilityLabel="Message your agent"
+          accessibilityLabel="Message your bee"
           style={{ flex: 1, maxHeight: 120, minHeight: 40, borderWidth: 1, borderColor: c.border, borderRadius: 20, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 16, color: c.text, backgroundColor: c.bg }}
         />
         <Pressable
@@ -129,7 +129,7 @@ function Bubble({ item }: { item: ChatItem }) {
   }
   const mine = item.role === "user";
   return (
-    <View style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, borderBottomRightRadius: mine ? 6 : 18, borderBottomLeftRadius: mine ? 18 : 6, backgroundColor: mine ? c.accent : c.surface, borderWidth: mine ? 0 : 0.5, borderColor: c.border }}>
+    <View style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, borderBottomRightRadius: mine ? 6 : 18, borderBottomLeftRadius: mine ? 18 : 6, backgroundColor: mine ? c.accentSoft : c.surface, borderWidth: 2, borderColor: c.border }}>
       <Text style={{ color: mine ? c.accentInk : c.text, fontSize: 16, lineHeight: 22 }}>{item.text}</Text>
     </View>
   );

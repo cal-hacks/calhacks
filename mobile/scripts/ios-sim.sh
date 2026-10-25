@@ -19,14 +19,20 @@ xcrun simctl boot "$UDID" 2>/dev/null || true
 open -a Simulator
 
 npx expo prebuild --platform ios
-xcodebuild -workspace ios/Orbit.xcworkspace -scheme Orbit -configuration Debug \
+# Prebuild only installs pods on a clean run; new native modules need this.
+(cd ios && pod install)
+# Prebuild keeps the project's original folder name, so find it.
+WORKSPACE=$(ls -d ios/*.xcworkspace | head -1)
+SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Debug \
   -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath ios/build \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
   PROVISIONING_PROFILE_SPECIFIER= PROVISIONING_PROFILE= \
   build | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
 
-APP=ios/build/Build/Products/Debug-iphonesimulator/Orbit.app
-[ -d "$APP" ] || { echo "Build failed"; exit 1; }
+# The .app is named after the display name (app.json "name").
+APP=$(ls -dt ios/build/Build/Products/Debug-iphonesimulator/*.app 2>/dev/null | head -1)
+[ -n "$APP" ] || { echo "Build failed"; exit 1; }
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl launch "$UDID" com.orbitfriends.app >/dev/null
 xcrun simctl openurl "$UDID" "exp+orbit://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
