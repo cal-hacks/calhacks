@@ -63,14 +63,6 @@
         }
       ],
       "expo-apple-authentication",
-      [
-        "@kingstinct/react-native-healthkit",
-        {
-          "NSHealthShareUsageDescription": "Waggle reads your steps, sleep and workouts so your agent can celebrate wins with your friends. Sleep is never shared.",
-          "NSHealthUpdateUsageDescription": "Waggle doesn't write to Health.",
-          "background": false
-        }
-      ],
       "./plugins/withPodsMinimumIos",
       "./plugins/withSceneLifecycle"
     ],

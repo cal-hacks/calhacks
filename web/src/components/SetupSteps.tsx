@@ -3,21 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import exifr from "exifr";
 import { useDB } from "../lib/db";
 import { currentUser, setCalendar, setPermissions } from "../lib/api";
-import { AGENT_URL, agentPost } from "../lib/agentApi";
+import { agentPost } from "../lib/agentApi";
 import { connectCalendar } from "../lib/integrations";
-import { connectAs, ingestToken, setConsent, useLive } from "../lib/live";
+import { connectAs, setConsent, useLive } from "../lib/live";
 import { PermissionCards } from "./PermissionCards";
 
 // Guided first-run setup: one source per step, each with its real sign-in or
 // browser prompt. Connecting a source also turns on sharing for it, since the
-// agent service refuses data for a source that's off. Browsers can't read
-// Apple Health, so Health goes through the iOS Shortcut here.
+// agent service refuses data for a source that's off.
 
-type StepKey = "calendar" | "health" | "photos" | "canvas" | "more";
+type StepKey = "calendar" | "photos" | "canvas" | "more";
 
 const STEPS: { key: StepKey; icon: string; title: string }[] = [
   { key: "calendar", icon: "📅", title: "Google Calendar" },
-  { key: "health", icon: "🏃", title: "Apple Health" },
   { key: "photos", icon: "📸", title: "Photos" },
   { key: "canvas", icon: "📚", title: "Canvas" },
   { key: "more", icon: "📍", title: "Location & Screen Time" },
@@ -80,7 +78,6 @@ export function SetupSteps({ onFinish }: { onFinish: () => void }) {
       <p className="small muted">Step {step + 1} of {STEPS.length}</p>
 
       {current.key === "calendar" && <CalendarStep onDone={() => markDone("calendar")} />}
-      {current.key === "health" && <HealthStep onDone={() => markDone("health")} />}
       {current.key === "photos" && <PhotosStep onDone={() => markDone("photos")} />}
       {current.key === "canvas" && <CanvasStep onDone={() => markDone("canvas")} />}
       {current.key === "more" && <PermissionCards only={["location", "screenTime"]} />}
@@ -154,39 +151,6 @@ function CalendarStep({ onDone }: { onDone: () => void }) {
       <button type="button" className="btn btn-primary" onClick={connect} disabled={a.busy}>
         {a.busy ? "Opening Google…" : "Connect Google Calendar"}
       </button>
-      <Outcome error={a.error} done={a.done} />
-    </StepCard>
-  );
-}
-
-function HealthStep({ onDone }: { onDone: () => void }) {
-  const [token, setToken] = useState<string | null>(null);
-  const a = useAction();
-  const start = () =>
-    a.run(async () => {
-      await setConsent("health", "highlights");
-      setToken(await ingestToken());
-      onDone();
-      return null;
-    });
-  const copy = () => token && navigator.clipboard.writeText(token).then(() => a.setDone("Token copied."));
-
-  return (
-    <StepCard icon="🏃" title="Apple Health" why="Steps, sleep and workouts. Sleep stays private; workouts and big step days can become wins your friends see. On iPhone, the Waggle app reads Health directly; from the web, an iOS Shortcut sends it.">
-      {!token ? (
-        <button type="button" className="btn btn-primary" onClick={start} disabled={a.busy}>Set up the Health Shortcut</button>
-      ) : (
-        <ol className="small stack-sm shortcut-steps">
-          <li>On your iPhone, open Shortcuts and make a shortcut that finds today's <em>Steps</em>, last night's <em>Sleep Analysis</em> and today's <em>Workouts</em>.</li>
-          <li>
-            Add <em>Get Contents of URL</em>: POST to <code>{AGENT_URL}/ingest/health</code> with header{" "}
-            <code>Authorization: Bearer</code> and your token.{" "}
-            <button type="button" className="btn btn-secondary btn-sm" onClick={copy}>Copy my token</button>
-          </li>
-          <li>Add a daily Personal Automation that runs it each morning.</li>
-          <li className="muted">Keep the token private: it lets anyone send data as you.</li>
-        </ol>
-      )}
       <Outcome error={a.error} done={a.done} />
     </StepCard>
   );

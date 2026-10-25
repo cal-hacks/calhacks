@@ -2,6 +2,8 @@ import { getDB, mutate, newId } from "./db";
 import { hashPassword, randomSalt } from "./hash";
 import { defaultPermissions, defaultSharing, sampleGoalsFor } from "./seed";
 import { today } from "./dates";
+import { currentProgress } from "./goals";
+import { celebrate } from "./celebrate";
 import * as live from "./live";
 import type {
   CalendarProvider,
@@ -175,6 +177,16 @@ function pushGoals() {
   if (db.session.userId) live.syncGoals(db.session.userId, db.goals, db.logs);
 }
 
+/** Apply a change to one goal's logs; confetti if it just reached its target this period. */
+function logAndCelebrate(goalId: Id, change: (db: DB) => DB) {
+  const goal = getDB().goals.find((g) => g.id === goalId);
+  const before = goal ? currentProgress(goal, getDB().logs).hit : true;
+  mutate(change);
+  if (goal && !before && currentProgress(goal, getDB().logs).hit) {
+    celebrate({ title: "Goal reached! 🎉", detail: goal.title });
+  }
+}
+
 function patchUser(id: Id, patch: Partial<User>) {
   mutate((db) => ({ ...db, users: db.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
 }
@@ -288,7 +300,6 @@ export function setSharing(friendId: Id, patch: Partial<Omit<SharingPrefs, "owne
       sharing: [...db.sharing.filter((s) => !(s.ownerId === me && s.friendId === friendId)), next],
     };
   });
-  if (patch.roastOk !== undefined) live.syncRoastOk(me, getDB().sharing);
 }
 
 /** Apply the same prefs to every friend (the "apply to all" shortcut). */
@@ -365,7 +376,7 @@ export function logProgress(goalId: Id, amount: number, date = today(), note?: s
   if (!goal) throw new ApiError("Goal not found.");
   if (!(amount > 0)) throw new ApiError("Enter an amount above zero.");
   const entry: GoalLog = { id: newId("l"), goalId, userId: me, amount, date, source: "manual", note, createdAt: Date.now() };
-  mutate((db) => ({ ...db, logs: [...db.logs, entry] }));
+  logAndCelebrate(goalId, (db) => ({ ...db, logs: [...db.logs, entry] }));
   pushGoals();
   return entry;
 }
@@ -376,7 +387,7 @@ export function logProgress(goalId: Id, amount: number, date = today(), note?: s
  */
 export function setTrackedAmount(goalId: Id, date: string, amount: number, source: GoalLog["source"]) {
   const me = requireUser().id;
-  mutate((db) => {
+  logAndCelebrate(goalId, (db) => {
     const others = db.logs.filter((l) => !(l.goalId === goalId && l.date === date && l.source === source));
     const entry: GoalLog = { id: newId("l"), goalId, userId: me, amount, date, source, createdAt: Date.now() };
     return { ...db, logs: [...others, entry] };

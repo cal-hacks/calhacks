@@ -82,7 +82,7 @@ export function sampleGoalsFor(userId: Id, seed = 42): { goals: Goal[]; logs: Go
   const goals: Goal[] = [
     g("library", { title: "Study at the library", category: "study", period: "daily", target: 90, unit: "minutes", direction: "atLeast", trackBy: "location", place: "Green Library", shareWithFriends: true }),
     g("psets", { title: "Finish problem sets", category: "study", period: "weekly", target: 4, unit: "times", direction: "atLeast", trackBy: "manual", shareWithFriends: false }),
-    g("run", { title: "Go for a run", category: "fitness", period: "weekly", target: 3, unit: "times", direction: "atLeast", trackBy: "health", shareWithFriends: true }),
+    g("run", { title: "Go for a run", category: "fitness", period: "weekly", target: 3, unit: "times", direction: "atLeast", trackBy: "manual", shareWithFriends: true }),
     g("screen", { title: "Keep screen time under 3h", category: "wellness", period: "daily", target: 180, unit: "minutes", direction: "atMost", trackBy: "screenTime", shareWithFriends: true }),
     g("call", { title: "Call a friend", category: "social", period: "monthly", target: 4, unit: "times", direction: "atLeast", trackBy: "manual", shareWithFriends: true }),
     g("books", { title: "Read 24 books", category: "custom", period: "yearly", target: 24, unit: "books", direction: "atLeast", trackBy: "manual", shareWithFriends: false }),

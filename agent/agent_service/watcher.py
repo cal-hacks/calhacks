@@ -1,15 +1,17 @@
 """Watches the shared world state and acts on it (plan flows B and C).
 
-- A friend's check-in, a goal reaching its target, a workout or big step day
-  (Health Shortcut), or a Screen Time win: Claude decides whether it's worth a
-  group-chat post, and the friend's agent posts it. An unusual photo becomes a
-  "weirdest place" post.
+- A goal reaching its target: always posted (the friend marked the goal
+  shareable), worded by Claude.
+- A friend's check-in, a workout or big step day (Health), or a Screen Time
+  win: Claude decides whether it's worth a post, and the friend's agent posts
+  it. An unusual photo becomes a "weirdest place" post.
 - "We should catch up" (and similar) in a chat (1:1 or group): the coordinator
   finds times everyone in that chat is free, pairs each with something to do
   (in person for friends who live close), and posts a plan to vote on.
 
-Agent posts go to the friend's first group chat, never a 1:1: a highlight is
-for the group, and friends with only 1:1 chats get no agent posts.
+Agent posts about a friend go to every chat they're in, 1:1s included, so all
+their friends hear it. Screen Time comparisons ("least in the group") go only
+to group chats.
 
 Python has no SpacetimeDB subscription SDK, so this polls over HTTP SQL and
 remembers the last ids it saw. The first poll only records where things are,
@@ -140,7 +142,7 @@ class Watcher:
             if g["id"] in done and g["id"] not in self.done_goals:
                 if friend := friends.get(g["friend_id"]):
                     await self.share(friend, "goal_hit", f"{friend.first} just reached their goal: {g['description']}.",
-                                     fallback=f"{friend.first} hit their goal: {g['description']} 🎯")
+                                     fallback=f"{friend.first} hit their goal: {g['description']} 🎯", always=True)
         self.done_goals = done
 
         new_stats = [x for x in sorted(stats, key=lambda x: x["id"]) if x["id"] > self.last_stat]
@@ -210,40 +212,47 @@ class Watcher:
         if hours == min(latest.values()):
             await self.share(friend, "highlight",
                              f"{friend.first} has the least screen time in the group: {hours:g} hours a day.",
-                             fallback=f"Least screen time in the group: {friend.first}, at {hours:g}h a day 🌿")
+                             fallback=f"Least screen time in the group: {friend.first}, at {hours:g}h a day 🌿", groups_only=True)
         elif hours == max(latest.values()) and roast_ok.get(friend.id):
             await self.share(friend, "roast",
                              f"{friend.first} has the most screen time in the group: {hours:g} hours a day.",
                              fallback=f"Screen Time champion of the week 📱👑 {friend.first}, at {hours:g}h a day.",
-                             system=ROAST_SYSTEM)
+                             system=ROAST_SYSTEM, groups_only=True)
 
     async def share(
-        self, friend: Friendly, kind: str, what: str, *, fallback: str, system: str = STORY_SYSTEM
+        self,
+        friend: Friendly,
+        kind: str,
+        what: str,
+        *,
+        fallback: str,
+        system: str = STORY_SYSTEM,
+        always: bool = False,
+        groups_only: bool = False,
     ) -> None:
+        """Claude words it and, unless `always`, decides whether to post at all."""
         story = await self.llm.write_json(system, what, STORY_SCHEMA)
-        if story is not None and not story["share"]:
+        if story is not None and not story["share"] and not always:
             log.info("Agent for %s chose not to share: %s", friend.name, what)
             return
-        await self.post(friend, kind, (story or {}).get("text") or fallback)
+        await self.post(friend, kind, (story or {}).get("text") or fallback, groups_only=groups_only)
 
-    async def post(self, friend: Friendly, kind: str, text: str) -> None:
-        group = await self.group_of(friend.id)
-        if group is None:
-            return
-        try:
-            await self.stdb.call(
-                "post_feed_item",
-                group_id=group,
-                friend_id=friend.id,
-                kind=kind,
-                text=text,
-                reply_to_id=0,
-                local_date=friend.local_date(),
-            )
-            log.info("Posted %s for %s", kind, friend.name)
-        except ReducerRejected as e:
-            # Daily limit or consent: the module said no, so skip.
-            log.info("Skipped %s for %s: %s", kind, friend.name, e)
+    async def post(self, friend: Friendly, kind: str, text: str, *, groups_only: bool = False) -> None:
+        for group in await self.chats_of(friend.id, groups_only=groups_only):
+            try:
+                await self.stdb.call(
+                    "post_feed_item",
+                    group_id=group,
+                    friend_id=friend.id,
+                    kind=kind,
+                    text=text,
+                    reply_to_id=0,
+                    local_date=friend.local_date(),
+                )
+                log.info("Posted %s for %s in chat %s", kind, friend.name, group)
+            except ReducerRejected as e:
+                # Daily limit or consent: the module said no, so skip this chat.
+                log.info("Skipped %s for %s in chat %s: %s", kind, friend.name, group, e)
 
     async def plan(self, group_id: int, gather: Callable[[], Awaitable[list[FriendUpdate]]]) -> None:
         """Plans for the people in this chat only. Friends without a running
@@ -257,8 +266,14 @@ class Watcher:
         result = await propose(self.stdb, group_id, updates, llm=self.llm)
         log.info("Catch-up request: %s", result.splitlines()[0])
 
-    async def group_of(self, friend_id: int) -> int | None:
-        """The friend's first group chat (not a 1:1), if any."""
-        mine = {r["group_id"] for r in await self.stdb.sql(f"SELECT group_id FROM membership WHERE friend_id = {friend_id}")}
+    async def chats_of(self, friend_id: int, *, groups_only: bool = False) -> list[int]:
+        """Chats the friend is in that still have someone to hear it (a 1:1 left
+        by an unfriended friend has one member), optionally group chats only."""
+        members = await self.stdb.sql("SELECT group_id, friend_id FROM membership")
+        mine = {m["group_id"] for m in members if m["friend_id"] == friend_id}
+        size = {g: sum(m["group_id"] == g for m in members) for g in mine}
         groups = await self.stdb.sql("SELECT id, is_direct FROM friend_group")
-        return min((g["id"] for g in groups if g["id"] in mine and not g["is_direct"]), default=None)
+        return sorted(
+            g["id"] for g in groups
+            if g["id"] in mine and size[g["id"]] > 1 and not (groups_only and g["is_direct"])
+        )

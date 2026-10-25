@@ -129,7 +129,7 @@ export async function sendToAgent(userText: string): Promise<void> {
 
 const PERIODS: GoalPeriod[] = ["daily", "weekly", "monthly", "yearly"];
 const CATEGORIES: GoalCategory[] = ["study", "fitness", "wellness", "social", "custom"];
-const SOURCES: TrackingSource[] = ["location", "calendar", "health", "screenTime", "manual"];
+const SOURCES: TrackingSource[] = ["location", "calendar", "screenTime", "manual"];
 
 function myGoals(): Goal[] {
   const db = getDB();

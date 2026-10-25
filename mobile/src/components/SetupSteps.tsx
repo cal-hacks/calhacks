@@ -1,12 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Linking, Platform, View } from "react-native";
+import { Linking, View } from "react-native";
 import * as Calendar from "expo-calendar";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
 import { Text } from "./Text";
-import { AGENT_URL, agentPost, connectGoogleCalendar, syncBusyTimes } from "../lib/agentApi";
-import { connectAs, ingestToken, setConsent, useLive } from "../lib/live";
-import { healthKitAvailable, requestHealthAccess, syncHealth } from "../lib/health";
+import { agentPost, connectGoogleCalendar, syncBusyTimes } from "../lib/agentApi";
+import { connectAs, setConsent, useLive } from "../lib/live";
 import { requestPhotos } from "../lib/integrations";
 import { currentUser, setCalendar, setPermissions } from "../lib/api";
 import { useDB } from "../lib/db";
@@ -15,16 +14,15 @@ import { Button, Card, ErrorText, Input, Row, Txt } from "./ui";
 import { useColors } from "./theme";
 
 // Guided first-run setup: one source per step, each with the real system
-// prompt (Health sheet, photo library, calendar) or sign-in (Google, Canvas).
+// prompt (photo library, calendar) or sign-in (Google, Canvas).
 // Connecting a source also turns on sharing for it, since the agent service
 // refuses data for a source that's off.
 
 type Level = "highlights" | "planning_only" | "off";
-type StepKey = "calendar" | "health" | "photos" | "canvas" | "more";
+type StepKey = "calendar" | "photos" | "canvas" | "more";
 
 const STEPS: { key: StepKey; icon: string; title: string }[] = [
   { key: "calendar", icon: "📅", title: "Calendar" },
-  { key: "health", icon: "🏃", title: "Apple Health" },
   { key: "photos", icon: "📸", title: "Photos" },
   { key: "canvas", icon: "📚", title: "Canvas" },
   { key: "more", icon: "📱", title: "Screen Time & location" },
@@ -109,7 +107,6 @@ export function SetupSteps({ onFinish }: { onFinish: () => void }) {
       </Row>
 
       {current.key === "calendar" && <CalendarStep onDone={markDone} />}
-      {current.key === "health" && <HealthStep onDone={markDone} />}
       {current.key === "photos" && <PhotosStep onDone={markDone} />}
       {current.key === "canvas" && <CanvasStep onDone={markDone} />}
       {current.key === "more" && <PermissionCards only={["location", "screenTime"]} />}
@@ -174,58 +171,6 @@ function CalendarStep({ onDone }: { onDone: () => void }) {
       <Txt small muted>Or use the calendars already on this iPhone.</Txt>
       <Button variant="secondary" title="Use this iPhone's calendars" onPress={usePhone} loading={phone.busy} />
       <Outcome error={phone.error} done={phone.done} />
-    </StepCard>
-  );
-}
-
-function HealthStep({ onDone }: { onDone: () => void }) {
-  const c = useColors();
-  const a = useAction();
-  const [token, setToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const native = healthKitAvailable();
-
-  const connect = () =>
-    a.run(() =>
-      withConsent("health", "highlights", async () => {
-        // Apple's sheet: the person picks which types to allow.
-        if (!(await requestHealthAccess())) throw new Error("Health access wasn't allowed. You can change it in Settings → Health → Data Access & Devices → Waggle.");
-        const stored = await syncHealth({ force: true });
-        if (stored === null) throw new Error("Couldn't read Health. Check Settings → Health → Data Access & Devices → Waggle.");
-        onDone();
-        return stored.length ? `Connected. Sent ${stored.join(", ")}.` : "Connected. New steps, sleep and workouts sync when you open Waggle.";
-      }),
-    );
-  const shortcut = () =>
-    a.run(async () => {
-      await setConsent("health", "highlights");
-      setToken(await ingestToken());
-      onDone();
-      return null;
-    });
-
-  return (
-    <StepCard icon="🏃" title="Apple Health" why="Steps, sleep and workouts. Sleep stays private; workouts and big step days can become wins your friends see.">
-      {native ? (
-        <Button title="Connect Apple Health" onPress={connect} loading={a.busy} />
-      ) : !token ? (
-        <>
-          <Txt small muted>This version of the app can't read Health directly, so you'll send it with an iOS Shortcut instead.</Txt>
-          <Button title="Set up the Health Shortcut" onPress={shortcut} loading={a.busy} />
-        </>
-      ) : (
-        <View style={{ gap: 6 }}>
-          <Txt small>1. Open Shortcuts and make a shortcut that finds today's Steps, last night's Sleep Analysis and today's Workouts.</Txt>
-          <Txt small>2. Add "Get Contents of URL" that POSTs them to</Txt>
-          <Text selectable style={{ fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12, color: c.text }}>{AGENT_URL}/ingest/health</Text>
-          <Txt small>with the header Authorization: Bearer (your token).</Txt>
-          <Txt small>3. Add a daily Personal Automation that runs it each morning.</Txt>
-          <Button small variant="secondary" title={copied ? "Token copied" : "Copy my token"} onPress={() => Clipboard.setStringAsync(token).then(() => setCopied(true))} />
-          <Button small variant="ghost" title="Open Shortcuts" onPress={() => Linking.openURL("shortcuts://").catch(() => {})} />
-          <Txt small muted>Keep the token private: it lets anyone send data as you.</Txt>
-        </View>
-      )}
-      <Outcome error={a.error} done={a.done} />
     </StepCard>
   );
 }

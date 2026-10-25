@@ -144,27 +144,21 @@ export function PermissionCards({ only }: { only?: Section[] } = {}) {
           <span className="perm-icon" aria-hidden>📱</span>
           <div>
             <h3>Screen Time</h3>
-            <p className="muted small">Browsers can't read Screen Time directly. Use our iOS Shortcut, or upload a screenshot and your agent reads the numbers.</p>
+            <p className="muted small">Browsers can't read Screen Time directly. Upload a screenshot and your agent reads the numbers.</p>
           </div>
-          <StatusPill on={perms.screenTime !== "off"} text={perms.screenTime === "off" ? "Off" : perms.screenTime === "shortcut" ? "Shortcut" : "Screenshots"} />
+          <StatusPill on={perms.screenTime !== "off"} text={perms.screenTime === "screenshot" ? "Screenshots" : "Off"} />
         </header>
         <div className="perm-actions">
           <Segmented<ScreenTimeMethod>
             label="Screen Time source"
-            value={perms.screenTime}
+            value={perms.screenTime === "screenshot" ? "screenshot" : "off"}
             options={[
-              { key: "shortcut", label: "iOS Shortcut" },
               { key: "screenshot", label: "Screenshots" },
               { key: "off", label: "Off" },
             ]}
             onChange={(v) => setPermissions({ screenTime: v })}
           />
         </div>
-        {perms.screenTime === "shortcut" && (
-          <p className="muted small">
-            We'll show your install link and one-time token here once the agent service is connected.
-          </p>
-        )}
       </section>
       )}
     </div>
