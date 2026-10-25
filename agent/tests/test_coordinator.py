@@ -108,25 +108,23 @@ async def test_propose_without_common_time_posts_nothing():
     assert "couldn't find a time" in text
 
 
-async def test_propose_reuses_open_plan():
+async def test_a_new_request_replaces_an_open_plan():
+    calls = []
+
     def handler(request: httpx.Request):
-        query = request.content.decode()
-        if "FROM plan_option" in query:
-            return httpx.Response(200, json=[{
-                "schema": {"elements": [
-                    {"name": {"some": "plan_id"}, "algebraic_type": {"U64": []}},
-                    {"name": {"some": "label"}, "algebraic_type": {"String": []}},
-                ]},
-                "rows": [[4, "Video call · Tue"], [5, "Video call · Wed"]],
-            }])
-        if "FROM plan" in query:
-            return sql_rows(["id"], [[4], [5]])
-        raise AssertionError("should not call a reducer")
+        if request.url.path.endswith("/sql"):
+            query = request.content.decode()
+            if "FROM plan WHERE" in query:
+                return sql_rows(["id"], [[5]])
+            return httpx.Response(200, json=[{"schema": {"elements": []}, "rows": []}])
+        calls.append((request.url.path.rsplit("/", 1)[-1], json.loads(request.content)))
+        return httpx.Response(200)
 
     stdb = StdbClient("http://db", "calhacks", "owner", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     block = [(at(0, 23), at(1, 2))]
-    text = await propose(stdb, 7, [FriendUpdate(MAYA, free_blocks=block)])
-    assert text == "There's already a plan open in the group chat:\n1. Video call · Wed\nVote there to lock it in."
+    await propose(stdb, 7, [FriendUpdate(MAYA, free_blocks=block), FriendUpdate(SAM, free_blocks=block)])
+    assert [name for name, _ in calls] == ["cancel_plan", "propose_plan"]
+    assert calls[0][1] == {"planId": 5}
 
 
 async def test_propose_prefers_times_after_a_heavy_week():

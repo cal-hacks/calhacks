@@ -237,6 +237,16 @@ describe('plans', () => {
     expect(() => run(maya, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }))).toThrow(/confirmed/);
   });
 
+  test('anyone in the chat can cancel an open plan; strangers cannot', () => {
+    const { plan } = propose();
+    const stranger_ = auth('outsider');
+    run(stranger_, ctx => mod.register(ctx, { username: 'outsider', name: 'Out', city: '', timezone: 'UTC', avatar: '' }));
+    expect(() => run(stranger_, ctx => mod.cancelPlan(ctx, { planId: plan.id }))).toThrow(/not in this plan/);
+    run(maya, ctx => mod.cancelPlan(ctx, { planId: plan.id }));
+    expect(rows('plan').at(-1).status).toBe('cancelled');
+    expect(() => run(maya, ctx => mod.cancelPlan(ctx, { planId: plan.id }))).toThrow(/cancelled/);
+  });
+
   test('friends cannot vote for someone else', () => {
     const { plan, options } = propose();
     expect(() =>

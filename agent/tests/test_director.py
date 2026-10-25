@@ -165,3 +165,27 @@ async def test_a_reseed_starts_over_quietly():
     await d.tick()
     await settle(d)
     assert said(db) == []
+
+
+async def test_votes_resume_on_a_plan_left_open_across_a_restart():
+    db, _, d = await setup()
+    db.propose(5, 7, ["🍕 Pizza · Wed", "🎨 Gartic Phone · Thu"])
+    db.vote(5, 3, 50)  # Priya voted before the restart
+    fresh = Director(db, FakeLlm(), pace=0)  # type: ignore[arg-type]
+    await fresh.tick()  # primes
+    await fresh.tick()  # picks up the open plan
+    await settle(fresh)
+    # Only Sam, who hadn't voted, votes, once. Riley + Maya + Priya + Sam need 3
+    # votes, so with Priya's and Sam's in, the deciding vote is left to a person.
+    assert [f for r, a in db.calls if r == "vote_plan" for f in [a["friend_id"]]] == [4]
+    assert db.tables["plan"][0]["status"] == "open"
+
+
+async def test_each_plan_is_voted_on_once():
+    db, _, d = await setup()
+    db.propose(5, 7, ["🍕 Pizza · Wed"])
+    await d.tick()
+    await d.tick()
+    await settle(d)
+    voters = [a["friend_id"] for r, a in db.calls if r == "vote_plan"]
+    assert len(voters) == len(set(voters))

@@ -89,6 +89,7 @@ class Director:
     first_group: int | None = None
     last_item: int = 0
     plans: dict[int, str] = field(default_factory=dict)  # plan id -> last seen status
+    voting: set[int] = field(default_factory=set)  # open plans the cast is voting on
     last_group_reply: dict[int, float] = field(default_factory=dict)
     tasks: set[asyncio.Task] = field(default_factory=set)
     rng: random.Random = field(default_factory=random.Random)
@@ -113,6 +114,8 @@ class Director:
             self.first_group = first_group
             self.last_item = max((f["id"] for f in items), default=0)
             self.plans = {pid: p["status"] for pid, p in plans.items()}
+            # Open plans from before a restart get voted on from the next poll.
+            self.voting = set()
             self.primed = True
             return
 
@@ -132,7 +135,9 @@ class Director:
         for pid, plan in plans.items():
             before = self.plans.get(pid)
             self.plans[pid] = plan["status"]
-            if before is None and plan["status"] == "open":
+            if plan["status"] == "open" and pid not in self.voting:
+                # New, or left open across a restart: the cast votes on it.
+                self.voting.add(pid)
                 chat = plan["group_id"]
                 self.later(self.vote_on(pid, chat, members.get(chat, []), cast, friends))
             elif before == "open" and plan["status"] == "confirmed":
@@ -222,14 +227,17 @@ class Director:
     # --- plans ---
 
     async def vote_on(self, plan_id: int, chat: int, chat_members: list[int], cast: set[int], friends: dict[int, dict]) -> None:
-        voters = [f for f in chat_members if f in cast]
+        voted = {v["friend_id"] for v in await self.stdb.sql(f"SELECT friend_id FROM plan_vote WHERE plan_id = {plan_id}")}
+        cast_here = [f for f in chat_members if f in cast]
+        voters = [f for f in cast_here if f not in voted]
         if not voters:
             return
         self.rng.shuffle(voters)
         majority = len(chat_members) // 2 + 1
         humans = [f for f in chat_members if f not in cast]
-        # Leave the deciding vote to a person, if there's one in the chat.
-        first_round = min(len(voters), majority - 1) if humans else len(voters)
+        # Leave the deciding vote to a person, if there's one in the chat
+        # (counting cast votes from before a restart).
+        first_round = max(0, min(len(cast_here), majority - 1) - (len(cast_here) - len(voters))) if humans else len(voters)
         options = await self.stdb.sql(f"SELECT id, label FROM plan_option WHERE plan_id = {plan_id}")
         if not options:
             return

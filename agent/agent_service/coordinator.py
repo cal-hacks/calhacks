@@ -4,6 +4,7 @@ Kept apart from the uAgents wiring so it can be tested without Agentverse.
 """
 
 import json
+import logging
 import re
 
 from .activities import GEOCODER, Geocoder, Idea, Nearby, fallback_ideas, locate_friends, miles_between, suggest
@@ -11,6 +12,8 @@ from .events import EVENTS, chat_name
 from .group import Friend, FriendUpdate, common_free_windows, format_time
 from .llm import Llm
 from .stdb import ReducerRejected, StdbClient
+
+log = logging.getLogger(__name__)
 
 PLAN_WORDS = re.compile(r"\b(plan|meet|meetup|call|hang ?out|get together|catch up)\b", re.I)
 
@@ -74,17 +77,18 @@ async def propose(
     Each option is one shared free window plus something to do: in person
     for friends who live close, otherwise a specific virtual hangout. Claude
     (with web search) picks timely ideas; without it, simple ones still post.
-    Asking again while a plan is still open points back to it instead of
-    posting a duplicate.
+    Asking again while a plan is still open replaces it.
     """
+    # A new request replaces a plan still waiting for votes, so a chat is
+    # never stuck behind a plan nobody voted on.
     open_plans = await stdb.sql(f"SELECT id FROM plan WHERE group_id = {group_id} AND status = 'open'")
+    for p in open_plans:
+        try:
+            await stdb.call("cancel_plan", plan_id=p["id"])
+        except ReducerRejected as e:
+            log.info("Couldn't cancel plan %s: %s", p["id"], e)
     if open_plans:
-        await EVENTS.emit("think", "There’s already a plan open here: vote on it first", group=group_id)
-        ids = [p["id"] for p in open_plans]
-        rows = await stdb.sql("SELECT plan_id, label FROM plan_option")
-        labels = [r["label"] for r in rows if r["plan_id"] == max(ids)]
-        listed = "\n".join(f"{i}. {label}" for i, label in enumerate(labels, 1))
-        return f"There's already a plan open in the group chat:\n{listed}\nVote there to lock it in."
+        await EVENTS.emit("think", "Replacing the plan nobody locked in with a fresh one", group=group_id)
 
     friends = [u.friend for u in updates]
     windows = common_free_windows(updates, limit=7)

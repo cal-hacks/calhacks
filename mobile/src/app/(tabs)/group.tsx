@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import {
   addCheckin,
   addGroupMember,
+  cancelPlan,
   chatMembers,
   chatTitle,
   createGroup,
@@ -380,7 +381,12 @@ function PlanCard({ plan, live }: { plan: Plan; live: LiveState }) {
           </Pressable>
         );
       })}
-      {plan.status === "open" && <Txt small muted>Tap a time. It's confirmed when most of the group picks the same one.</Txt>}
+      {plan.status === "open" && (
+        <>
+          <Txt small muted>Tap a time. It's confirmed when most of the group picks the same one.</Txt>
+          <Button small variant="ghost" title="Cancel plan" onPress={() => cancelPlan(plan.id).catch(() => {})} style={{ alignSelf: "flex-start" }} />
+        </>
+      )}
     </View>
   );
 }
