@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   addCheckin,
   addGroupMember,
+  cancelPlan,
   chatMembers,
   chatTitle,
   createGroup,
@@ -389,7 +390,12 @@ function PlanCard({ plan, live }: { plan: Plan; live: LiveState }) {
           </button>
         );
       })}
-      {plan.status === "open" && <p className="small muted">Tap a time. It's confirmed when most of the group picks the same one.</p>}
+      {plan.status === "open" && (
+        <div className="row-actions spread">
+          <p className="small muted">Tap a time. It's confirmed when most of the group picks the same one.</p>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => cancelPlan(plan.id).catch(() => {})}>Cancel plan</button>
+        </div>
+      )}
     </div>
   );
 }

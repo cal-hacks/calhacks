@@ -439,6 +439,11 @@ export async function votePlan(planId: bigint, optionId: bigint) {
   await live()?.reducers.votePlan({ planId, optionId, friendId: 0n });
 }
 
+/** Call off an open plan (anyone in the chat can), so a new one can be made. */
+export async function cancelPlan(planId: bigint) {
+  await live()?.reducers.cancelPlan({ planId });
+}
+
 /** What a source may be used for: shared as highlights, planning only, or off. */
 export async function setConsent(source: string, shareLevel: "highlights" | "planning_only" | "off") {
   await live()?.reducers.setConsent({ source, shareLevel });

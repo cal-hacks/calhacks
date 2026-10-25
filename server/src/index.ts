@@ -1020,12 +1020,15 @@ export const confirmPlan = spacetimedb.reducer(
   }
 );
 
+// The agent, or anyone in the plan's chat, can call off an open plan, so a
+// chat is never stuck behind a plan nobody votes on.
 export const cancelPlan = spacetimedb.reducer(
   { planId: t.u64() },
   (ctx, { planId }) => {
-    requireAgent(ctx);
     const row = ctx.db.plan.id.find(planId);
     if (!row) fail('no such plan');
+    if (!isAgent(ctx) && !isMember(ctx, row.groupId, callerFriend(ctx).id)) fail('not in this plan’s group');
+    if (row.status !== 'open') fail(`plan is ${row.status}`);
     ctx.db.plan.id.update({ ...row, status: 'cancelled' });
   }
 );
