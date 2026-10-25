@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDB } from "../lib/db";
 import { ApiError, createGoal, currentUser, deleteGoal, logProgress, permissionsOf, updateGoal } from "../lib/api";
@@ -30,6 +30,10 @@ export function GoalsPage() {
   const perms = permissionsOf(db, me.id);
   const [editing, setEditing] = useState<Goal | "new" | null>(null);
   const [template, setTemplate] = useState<Draft>(BLANK);
+  // Editing a goal far down the list: bring the form into view.
+  useEffect(() => {
+    if (editing !== null) window.scrollTo({ top: 0 });
+  }, [editing]);
 
   const goals = db.goals.filter((g) => g.userId === me.id && !g.archived);
 
@@ -79,11 +83,13 @@ export function GoalsPage() {
         />
       )}
 
-      {goals.length === 0 && editing === null ? (
+      {/* The form stands alone: your other goals come back when you save or cancel. */}
+      {editing === null && goals.length === 0 && (
         <div className="card empty">
           <p>No goals yet. Try a quick start above, like studying at the library for 2 hours a day.</p>
         </div>
-      ) : (
+      )}
+      {editing === null &&
         PERIODS.map((p) => {
           const list = goals.filter((g) => g.period === p.key);
           if (!list.length) return null;
@@ -95,8 +101,7 @@ export function GoalsPage() {
               ))}
             </section>
           );
-        })
-      )}
+        })}
     </div>
   );
 }

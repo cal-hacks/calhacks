@@ -11,11 +11,16 @@ import spacetimedb, {
   CONSENT_SOURCES,
   consent,
   createDefaults,
+  feedItem,
   friend,
+  friendGroup,
   friendSettings,
+  friendship,
+  membership,
   nudge,
   type Ctx,
 } from './schema';
+import { areFriends, befriend, directChat, friendshipBetween, isMember } from './friends';
 import { resetAll, seedDemo as runSeed } from './seed';
 
 export default spacetimedb;
@@ -120,15 +125,22 @@ function callerFriend(ctx: Ctx) {
   return self;
 }
 
-function isMember(ctx: Ctx, groupId: bigint, friendId: bigint): boolean {
-  for (const m of ctx.db.membership.friendId.filter(friendId)) {
-    if (m.groupId === groupId) return true;
-  }
-  return false;
-}
-
 function groupMemberIds(ctx: Ctx, groupId: bigint): bigint[] {
   return [...ctx.db.membership.groupId.filter(groupId)].map(m => m.friendId);
+}
+
+const USERNAME_RE = /^[a-z0-9._]{3,24}$/;
+
+// A valid username nobody else (other than `selfId`) has.
+function freeUsername(ctx: Ctx, raw: string, selfId: bigint): string {
+  const username = raw.trim().toLowerCase().replace(/^@/, '');
+  if (!USERNAME_RE.test(username)) {
+    fail('usernames are 3–24 characters: letters, numbers, dots, underscores');
+  }
+  for (const row of ctx.db.friend.iter()) {
+    if (row.id !== selfId && row.username === username) fail('that username is taken');
+  }
+  return username;
 }
 
 function consentLevel(ctx: Ctx, friendId: bigint, source: string): string {
@@ -211,21 +223,20 @@ export const resetDemo = spacetimedb.reducer(ctx => {
   resetAll(ctx);
 });
 
-// --- Joining ---
+// --- Signing up ---
 
-export const joinGroup = spacetimedb.reducer(
+// A new person: a friend row with no friends and no chats yet.
+export const register = spacetimedb.reducer(
   {
-    inviteCode: t.string(),
+    username: t.string(),
     name: t.string(),
     city: t.string(),
     timezone: t.string(),
     avatar: t.string(),
   },
-  (ctx, { inviteCode, name, city, timezone, avatar }) => {
-    if (isAgent(ctx)) fail('the agent cannot join as a friend');
+  (ctx, { username, name, city, timezone, avatar }) => {
+    if (isAgent(ctx)) fail('the agent cannot sign up as a friend');
     if (friendForIdentity(ctx)) fail('you already joined');
-    const code = ctx.db.invite.code.find(inviteCode.trim());
-    if (!code || code.kind !== 'group') fail('unknown invite code');
     const row = ctx.db.friend.insert({
       id: 0n,
       identity: ctx.sender,
@@ -233,9 +244,18 @@ export const joinGroup = spacetimedb.reducer(
       city: city.trim(),
       timezone: timezone.trim(),
       avatar: avatar.trim(),
+      username: freeUsername(ctx, username, 0n),
     });
-    ctx.db.membership.insert({ id: 0n, groupId: code.targetId, friendId: row.id });
     createDefaults(ctx, row.id);
+  }
+);
+
+// For people who joined before usernames existed (or want a new one).
+export const setUsername = spacetimedb.reducer(
+  { username: t.string() },
+  (ctx, { username }) => {
+    const self = callerFriend(ctx);
+    ctx.db.friend.id.update({ ...self, username: freeUsername(ctx, username, self.id) });
   }
 );
 
@@ -266,6 +286,112 @@ export const updateProfile = spacetimedb.reducer(
       timezone: timezone.trim(),
       avatar: avatar.trim(),
     });
+  }
+);
+
+// --- Friends (friend-only) ---
+
+const MAX_GROUP_SIZE = 20;
+
+// Asks `toId` to be friends. If they already asked, this accepts. Seeded
+// people nobody has claimed have no one to tap Accept, so they accept at once.
+export const sendFriendRequest = spacetimedb.reducer(
+  { toId: t.u64() },
+  (ctx, { toId }) => {
+    const self = callerFriend(ctx);
+    const other = requireFriendRow(ctx, toId);
+    if (other.id === self.id) fail('you cannot add yourself');
+    const existing = friendshipBetween(ctx, self.id, other.id);
+    if (existing?.status === 'accepted') fail('you are already friends');
+    if (existing && existing.fromId === self.id) fail('request already sent');
+    if (existing || !other.identity) {
+      befriend(ctx, other.id, self.id);
+      return;
+    }
+    ctx.db.friendship.insert({
+      id: 0n,
+      fromId: self.id,
+      toId: other.id,
+      status: 'pending',
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+export const acceptFriendRequest = spacetimedb.reducer(
+  { fromId: t.u64() },
+  (ctx, { fromId }) => {
+    const self = callerFriend(ctx);
+    const row = friendshipBetween(ctx, self.id, fromId);
+    if (!row || row.status !== 'pending' || row.toId !== self.id) fail('no request from them');
+    befriend(ctx, fromId, self.id);
+  }
+);
+
+// Declines, cancels or unfriends. Unfriending also closes your 1:1 chat:
+// neither of you can post there any more.
+export const removeFriend = spacetimedb.reducer(
+  { friendId: t.u64() },
+  (ctx, { friendId }) => {
+    const self = callerFriend(ctx);
+    const row = friendshipBetween(ctx, self.id, friendId);
+    if (!row) fail('you are not connected');
+    ctx.db.friendship.delete(row);
+    const chat = directChat(ctx, self.id, friendId);
+    if (chat) {
+      for (const m of [...ctx.db.membership.groupId.filter(chat.id)]) ctx.db.membership.delete(m);
+    }
+  }
+);
+
+// --- Group chats (friend-only): made of, and grown with, your friends ---
+
+export const createGroup = spacetimedb.reducer(
+  { name: t.string(), friendIds: t.array(t.u64()) },
+  (ctx, { name, friendIds }) => {
+    const self = callerFriend(ctx);
+    const others = [...new Set(friendIds)].filter(id => id !== self.id);
+    if (others.length === 0) fail('add at least one friend');
+    if (others.length + 1 > MAX_GROUP_SIZE) fail(`groups hold up to ${MAX_GROUP_SIZE} people`);
+    for (const id of others) {
+      if (!areFriends(ctx, self.id, id)) fail(`friend ${id} is not your friend`);
+    }
+    const group = ctx.db.friendGroup.insert({ id: 0n, name: cleanText(name, 'name'), isDirect: false });
+    for (const id of [self.id, ...others]) {
+      ctx.db.membership.insert({ id: 0n, groupId: group.id, friendId: id });
+    }
+  }
+);
+
+export const addGroupMember = spacetimedb.reducer(
+  { groupId: t.u64(), friendId: t.u64() },
+  (ctx, { groupId, friendId }) => {
+    const self = callerFriend(ctx);
+    const group = ctx.db.friendGroup.id.find(groupId);
+    if (!group || !isMember(ctx, groupId, self.id)) fail('you are not in this group');
+    if (group.isDirect) fail('1:1 chats stay 1:1; make a group instead');
+    if (!areFriends(ctx, self.id, friendId)) fail('you can only add your friends');
+    if (isMember(ctx, groupId, friendId)) fail('they are already in this group');
+    if (groupMemberIds(ctx, groupId).length >= MAX_GROUP_SIZE) {
+      fail(`groups hold up to ${MAX_GROUP_SIZE} people`);
+    }
+    ctx.db.membership.insert({ id: 0n, groupId, friendId });
+  }
+);
+
+export const leaveGroup = spacetimedb.reducer(
+  { groupId: t.u64() },
+  (ctx, { groupId }) => {
+    const self = callerFriend(ctx);
+    const group = ctx.db.friendGroup.id.find(groupId);
+    if (!group || group.isDirect) fail('no such group');
+    for (const m of ctx.db.membership.friendId.filter(self.id)) {
+      if (m.groupId === groupId) {
+        ctx.db.membership.delete(m);
+        return;
+      }
+    }
+    fail('you are not in this group');
   }
 );
 
@@ -326,12 +452,9 @@ export const setFriendSettings = spacetimedb.reducer(
     if (trusted.length > MAX_TRUSTED_FRIENDS) {
       fail(`pick at most ${MAX_TRUSTED_FRIENDS} trusted friends`);
     }
-    const myGroups = [...ctx.db.membership.friendId.filter(self.id)].map(m => m.groupId);
     for (const id of trusted) {
       if (id === self.id) fail('you cannot be your own trusted friend');
-      if (!myGroups.some(g => isMember(ctx, g, id))) {
-        fail(`friend ${id} is not in any of your groups`);
-      }
+      if (!areFriends(ctx, self.id, id)) fail(`friend ${id} is not your friend`);
     }
     const row = { friendId: self.id, roastOk, checkOnMe, trustedFriendIds: trusted, nudgePreview };
     if (ctx.db.friendSettings.friendId.find(self.id)) {
@@ -741,6 +864,44 @@ export const myFriend = spacetimedb.view(
     const id = viewerFriendId(ctx);
     return id === undefined ? undefined : ctx.db.friend.id.find(id) ?? undefined;
   }
+);
+
+// Requests to and from the viewer, and their friendships.
+export const myFriendships = spacetimedb.view(
+  { public: true },
+  t.array(friendship.rowType),
+  ctx => {
+    const id = viewerFriendId(ctx);
+    if (id === undefined) return [];
+    return [...ctx.db.friendship.fromId.filter(id), ...ctx.db.friendship.toId.filter(id)];
+  }
+);
+
+function viewerGroupIds(ctx: { sender: any; db: any }): bigint[] {
+  const id = viewerFriendId(ctx);
+  if (id === undefined) return [];
+  return [...ctx.db.membership.friendId.filter(id)].map((m: { groupId: bigint }) => m.groupId);
+}
+
+// The chats the viewer is in.
+export const myGroups = spacetimedb.view(
+  { public: true },
+  t.array(friendGroup.rowType),
+  ctx => viewerGroupIds(ctx).flatMap(g => ctx.db.friendGroup.id.find(g) ?? [])
+);
+
+// Who is in each of the viewer's chats.
+export const myMemberships = spacetimedb.view(
+  { public: true },
+  t.array(membership.rowType),
+  ctx => viewerGroupIds(ctx).flatMap(g => [...ctx.db.membership.groupId.filter(g)])
+);
+
+// Messages and agent posts in the viewer's chats.
+export const myFeed = spacetimedb.view(
+  { public: true },
+  t.array(feedItem.rowType),
+  ctx => viewerGroupIds(ctx).flatMap(g => [...ctx.db.feedItem.groupId.filter(g)])
 );
 
 export const myConsent = spacetimedb.view(

@@ -113,7 +113,7 @@ function CalendarCard({ off }: { off: boolean }) {
     a.run(async () => {
       if (Platform.OS === "web") throw new Error("Calendar sync runs on the phone.");
       const { status } = await Calendar.requestCalendarPermissionsAsync();
-      if (status !== "granted") throw new Error("Calendar access is off. Allow it in Settings → Orbit.");
+      if (status !== "granted") throw new Error("Calendar access is off. Allow it in Settings → Waggle.");
       const result = await syncBusyTimes();
       if (result === "skipped") throw new Error("Calendar sharing is off above.");
       return result && "Sent this week's busy times. Plans will fit around them.";
@@ -212,8 +212,8 @@ function HealthCard({ off }: { off: boolean }) {
   const sync = () =>
     a.run(async () => {
       const stored = await syncHealth({ force: true });
-      if (stored === null) throw new Error("Health access is off. Allow it in Settings → Health → Data Access & Devices → Orbit.");
-      return stored.length ? `Sent ${stored.join(", ")}. It syncs again when you open Orbit.` : "Nothing new since the last sync.";
+      if (stored === null) throw new Error("Health access is off. Allow it in Settings → Health → Data Access & Devices → Waggle.");
+      return stored.length ? `Sent ${stored.join(", ")}. It syncs again when you open Waggle.` : "Nothing new since the last sync.";
     });
 
   return (

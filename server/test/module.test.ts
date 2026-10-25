@@ -41,9 +41,12 @@ beforeEach(() => {
 
 describe('seed', () => {
   test('creates the demo world', () => {
-    expect(rows('friend')).toHaveLength(4);
-    expect(rows('membership')).toHaveLength(4);
-    expect(rows('consent')).toHaveLength(20);
+    // Four in the group plus two others to find.
+    expect(rows('friend')).toHaveLength(6);
+    // The group's four members, plus two per 1:1 chat between them.
+    expect(rows('membership')).toHaveLength(4 + 6 * 2);
+    expect(rows('friendship').filter(f => f.status === 'accepted')).toHaveLength(6);
+    expect(rows('consent')).toHaveLength(30);
     expect(rows('feedItem').length).toBeGreaterThan(5);
     expect(rows('freeBlock').length).toBeGreaterThan(5);
     expect(rows('stat').length).toBeGreaterThan(40);
@@ -53,8 +56,9 @@ describe('seed', () => {
     expect(() => run(agent, ctx => mod.seedDemo(ctx, {}))).toThrow(/reset_demo/);
     run(agent, ctx => mod.resetDemo(ctx, {}));
     expect(rows('friend')).toHaveLength(0);
+    expect(rows('friendship')).toHaveLength(0);
     run(agent, ctx => mod.seedDemo(ctx, {}));
-    expect(rows('friend')).toHaveLength(4);
+    expect(rows('friend')).toHaveLength(6);
   });
 });
 
@@ -76,12 +80,21 @@ describe('agent identity', () => {
 });
 
 describe('joining', () => {
-  test('group invite creates a friend with everything off', () => {
-    run(stranger, ctx => mod.joinGroup(ctx, { inviteCode: DEMO_CODES.group, name: 'Priya', city: 'Seattle', timezone: 'America/Los_Angeles', avatar: '🌧️' }));
-    const id = friendId('Priya');
-    const levels = rows('consent').filter(c => c.friendId === id).map(c => c.shareLevel);
+  test('signing up makes a friend with everything off, no friends and no chats', () => {
+    run(stranger, ctx => mod.register(ctx, { username: '@Nina.W', name: 'Nina', city: 'Seattle', timezone: 'America/Los_Angeles', avatar: '🌧️' }));
+    const nina = rows('friend').find(f => f.name === 'Nina');
+    expect(nina.username).toBe('nina.w');
+    const levels = rows('consent').filter(c => c.friendId === nina.id).map(c => c.shareLevel);
     expect(levels).toEqual(['off', 'off', 'off', 'off', 'off']);
-    expect(() => run(stranger, ctx => mod.joinGroup(ctx, { inviteCode: DEMO_CODES.group, name: 'Again', city: '', timezone: '', avatar: '' }))).toThrow(/already/);
+    expect(rows('membership').filter(m => m.friendId === nina.id)).toHaveLength(0);
+    expect(() => run(stranger, ctx => mod.register(ctx, { username: 'again', name: 'Again', city: '', timezone: '', avatar: '' }))).toThrow(/already/);
+  });
+
+  test('usernames are checked and unique', () => {
+    expect(() => run(stranger, ctx => mod.register(ctx, { username: 'maya_runs', name: 'X', city: '', timezone: '', avatar: '' }))).toThrow(/taken/);
+    expect(() => run(stranger, ctx => mod.register(ctx, { username: 'no spaces', name: 'X', city: '', timezone: '', avatar: '' }))).toThrow(/3–24/);
+    run(maya, ctx => mod.setUsername(ctx, { username: 'maya_runs' })); // keeping your own is fine
+    expect(() => run(maya, ctx => mod.setUsername(ctx, { username: 'sam_l' }))).toThrow(/taken/);
   });
 
   test('claiming again moves a seeded friend to the new device', () => {
@@ -101,7 +114,7 @@ describe('consent and settings', () => {
     expect(() => run(maya, ctx => mod.setConsent(ctx, { source: 'dna', shareLevel: 'highlights' }))).toThrow(/source/);
   });
 
-  test('trusted friends must be group members, max two', () => {
+  test('trusted friends must be friends, max two', () => {
     const ids = [friendId('Sam'), friendId('Jordan')];
     run(maya, ctx => mod.setFriendSettings(ctx, { roastOk: false, checkOnMe: true, trustedFriendIds: ids, nudgePreview: false }));
     expect(() =>
@@ -109,7 +122,7 @@ describe('consent and settings', () => {
     ).toThrow(/own trusted/);
     expect(() =>
       run(maya, ctx => mod.setFriendSettings(ctx, { roastOk: false, checkOnMe: true, trustedFriendIds: [999n], nudgePreview: false }))
-    ).toThrow(/not in any/);
+    ).toThrow(/not your friend/);
   });
 
   test('stats from a source that is off are rejected', () => {
@@ -247,5 +260,93 @@ describe('ingest token', () => {
     expect(() => run(maya, ctx => mod.setIngestToken(ctx, { tokenHash: hash('A') }))).toThrow(/64 lowercase hex/);
     expect(() => run(agent, ctx => mod.setIngestToken(ctx, { tokenHash: hash('a') }))).toThrow(/not the agent/);
     expect(() => run(stranger, ctx => mod.setIngestToken(ctx, { tokenHash: hash('a') }))).toThrow(/join the group/);
+  });
+});
+
+describe('friends and chats', () => {
+  const nina = auth('nina');
+  const omar = auth('omar');
+  const signUp = (who: TestAuth, username: string) => {
+    run(who, ctx => mod.register(ctx, { username, name: username, city: '', timezone: 'UTC', avatar: '' }));
+    return rows('friend').find(f => f.username === username).id as bigint;
+  };
+  const chatsOf = (who: TestAuth) => mod.myGroups(h.viewContext(who) as any, {} as any) as any[];
+  const dmBetween = (who: TestAuth) => chatsOf(who).find(g => g.isDirect);
+  let ninaId: bigint;
+  let omarId: bigint;
+
+  beforeEach(() => {
+    ninaId = signUp(nina, 'nina');
+    omarId = signUp(omar, 'omar');
+  });
+
+  test('a request becomes a friendship and a 1:1 chat when accepted', () => {
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }));
+    expect(() => run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }))).toThrow(/already sent/);
+    expect(chatsOf(nina)).toHaveLength(0);
+    const seen = mod.myFriendships(h.viewContext(omar) as any, {} as any) as any[];
+    expect(seen).toMatchObject([{ fromId: ninaId, toId: omarId, status: 'pending' }]);
+    // Only the recipient accepts.
+    expect(() => run(nina, ctx => mod.acceptFriendRequest(ctx, { fromId: omarId }))).toThrow(/no request/);
+    run(omar, ctx => mod.acceptFriendRequest(ctx, { fromId: ninaId }));
+    const dm = dmBetween(nina);
+    expect(dm).toBeDefined();
+    expect(dmBetween(omar).id).toBe(dm.id);
+    run(omar, ctx => mod.sendMessage(ctx, { groupId: dm.id, text: 'hey!', replyToId: 0n }));
+    expect((mod.myFeed(h.viewContext(nina) as any, {} as any) as any[]).map(f => f.text)).toEqual(['hey!']);
+  });
+
+  test('asking someone who already asked you accepts', () => {
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }));
+    run(omar, ctx => mod.sendFriendRequest(ctx, { toId: ninaId }));
+    expect(rows('friendship').find(f => f.fromId === ninaId).status).toBe('accepted');
+  });
+
+  test('unclaimed seeded people accept right away', () => {
+    const priya = rows('friend').find(f => f.username === 'priya.k').id;
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: priya }));
+    expect(chatsOf(nina)).toHaveLength(1);
+  });
+
+  test('strangers cannot message, see or join each other’s chats', () => {
+    const dm = dmBetween(maya);
+    expect(() => run(nina, ctx => mod.sendMessage(ctx, { groupId: dm.id, text: 'hi', replyToId: 0n }))).toThrow(/not in this group/);
+    expect(() => run(nina, ctx => mod.sendMessage(ctx, { groupId: groupId(), text: 'hi', replyToId: 0n }))).toThrow(/not in this group/);
+    expect(mod.myFeed(h.viewContext(nina) as any, {} as any)).toEqual([]);
+    expect(mod.myMemberships(h.viewContext(nina) as any, {} as any)).toEqual([]);
+    // Maya can't pull a stranger into the group either.
+    expect(() => run(maya, ctx => mod.addGroupMember(ctx, { groupId: groupId(), friendId: ninaId }))).toThrow(/only add your friends/);
+    expect(() => run(nina, ctx => mod.createGroup(ctx, { name: 'Us', friendIds: [omarId] }))).toThrow(/not your friend/);
+  });
+
+  test('groups are made of friends and grow with friends', () => {
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }));
+    run(omar, ctx => mod.acceptFriendRequest(ctx, { fromId: ninaId }));
+    run(nina, ctx => mod.createGroup(ctx, { name: 'Weekend', friendIds: [omarId] }));
+    const group = chatsOf(omar).find(g => !g.isDirect);
+    expect(group.name).toBe('Weekend');
+    // Maya befriends Nina, who adds her; Omar can't add Maya (not his friend).
+    run(maya, ctx => mod.sendFriendRequest(ctx, { toId: ninaId }));
+    run(nina, ctx => mod.acceptFriendRequest(ctx, { fromId: fid('Maya') }));
+    expect(() => run(omar, ctx => mod.addGroupMember(ctx, { groupId: group.id, friendId: fid('Maya') }))).toThrow(/only add your friends/);
+    run(nina, ctx => mod.addGroupMember(ctx, { groupId: group.id, friendId: fid('Maya') }));
+    run(maya, ctx => mod.sendMessage(ctx, { groupId: group.id, text: 'hi all', replyToId: 0n }));
+    const dm = dmBetween(omar);
+    expect(() => run(nina, ctx => mod.addGroupMember(ctx, { groupId: dm.id, friendId: fid('Maya') }))).toThrow(/1:1/);
+    run(omar, ctx => mod.leaveGroup(ctx, { groupId: group.id }));
+    expect(() => run(omar, ctx => mod.sendMessage(ctx, { groupId: group.id, text: 'still here?', replyToId: 0n }))).toThrow(/not in this group/);
+  });
+
+  test('unfriending closes the 1:1 chat', () => {
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }));
+    run(omar, ctx => mod.acceptFriendRequest(ctx, { fromId: ninaId }));
+    const dm = dmBetween(nina);
+    run(omar, ctx => mod.removeFriend(ctx, { friendId: ninaId }));
+    expect(rows('friendship')).not.toContainEqual(expect.objectContaining({ fromId: ninaId, toId: omarId }));
+    expect(() => run(nina, ctx => mod.sendMessage(ctx, { groupId: dm.id, text: 'hello?', replyToId: 0n }))).toThrow(/not in this group/);
+    // Declining a request is the same call.
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }));
+    run(omar, ctx => mod.removeFriend(ctx, { friendId: ninaId }));
+    expect(mod.myFriendships(h.viewContext(nina) as any, {} as any)).toEqual([]);
   });
 });

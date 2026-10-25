@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useDB } from "../lib/db";
 import { completeOnboarding, currentUser } from "../lib/api";
 import { APP_NAME } from "../lib/meta";
-import { PermissionCards } from "../components/PermissionCards";
+import { SetupSteps } from "../components/SetupSteps";
 
 /** Shown once, right after sign-up. */
 export function PermissionsPage() {
@@ -24,12 +24,12 @@ export function PermissionsPage() {
       <header className="page-head">
         <h1>Welcome, {me.displayName.split(" ")[0]} 👋</h1>
         <p className="muted">
-          Choose what your {APP_NAME} agent can see. Nothing is shared with friends yet: you'll pick that per friend
-          next. You can change any of this later in Settings.
+          Connect what your {APP_NAME} agent can use. Nothing is shared with friends yet: you'll pick that per friend
+          next. You can change any of this later in the Share tab.
         </p>
       </header>
 
-      <PermissionCards />
+      <SetupSteps onFinish={finish} />
 
       <aside className="privacy-note">
         <strong>How your agent uses this:</strong> it filters out anything you haven't allowed <em>before</em> the
@@ -37,10 +37,6 @@ export function PermissionsPage() {
         doesn't share.
       </aside>
 
-      <div className="onboarding-actions">
-        <button type="button" className="btn btn-ghost" onClick={finish}>Skip for now</button>
-        <button type="button" className="btn btn-primary" onClick={finish}>Continue</button>
-      </div>
     </div>
   );
 }

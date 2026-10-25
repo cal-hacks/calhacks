@@ -23,8 +23,6 @@ export const FREQUENCIES: { key: UpdateFrequency; label: string; hint: string }[
 
 export const CALENDAR_PROVIDERS: { key: CalendarProvider; label: string; icon: string }[] = [
   { key: "google", label: "Google Calendar", icon: "🟦" },
-  { key: "outlook", label: "Outlook / Microsoft 365", icon: "🟧" },
-  { key: "apple", label: "Apple iCloud Calendar", icon: "⬜" },
 ];
 
 export const PERIODS: { key: GoalPeriod; label: string }[] = [

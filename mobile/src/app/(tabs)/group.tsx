@@ -1,10 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { addCheckin, sendMessage, toggleReaction, useLive, votePlan, type LiveState } from "../../lib/live";
-import type { FeedItem, Friend, Plan } from "../../module_bindings/types";
-import { Button, Card, ErrorText, Txt } from "../../components/ui";
+import {
+  addCheckin,
+  addGroupMember,
+  chatMembers,
+  chatTitle,
+  createGroup,
+  leaveGroup,
+  liveFriends,
+  openChat,
+  sendMessage,
+  toggleReaction,
+  useLive,
+  votePlan,
+  type LiveState,
+} from "../../lib/live";
+import type { FeedItem, Friend, FriendGroup, Plan } from "../../module_bindings/types";
+import { Button, Card, Chip, Chips, ErrorText, Input, Txt } from "../../components/ui";
 import { radius, useColors } from "../../components/theme";
 
 const REACTIONS = ["❤️", "🎉", "😂", "👏"];
@@ -30,10 +44,148 @@ function planFor(live: LiveState, item: FeedItem): Plan | undefined {
   return live.plans.find((p) => p.createdAt.toDate().getTime() === t);
 }
 
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** The Chats tab: the list of chats, or the open one. */
 export default function GroupScreen() {
   const live = useLive();
   const c = useColors();
   const insets = useSafeAreaInsets();
+
+  if (live.status !== "ready") {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, padding: 16, paddingTop: insets.top + 12, gap: 12 }}>
+        <Text style={{ fontSize: 28, fontWeight: "700", color: c.text }}>Chats</Text>
+        <Card>
+          <Txt muted={live.status !== "error"} style={live.status === "error" ? { color: c.warn } : undefined}>
+            {live.status === "error" ? live.error : live.status === "joining" ? "Signing you up…" : "Connecting…"}
+          </Txt>
+        </Card>
+      </View>
+    );
+  }
+  return live.group ? <ChatScreen live={live} group={live.group} /> : <ChatList live={live} />;
+}
+
+function lastActivity(live: LiveState, groupId: bigint): FeedItem | undefined {
+  const items = live.allFeed.filter((f) => f.groupId === groupId);
+  return items[items.length - 1];
+}
+
+function ChatList({ live }: { live: LiveState }) {
+  const c = useColors();
+  const insets = useSafeAreaInsets();
+  const [making, setMaking] = useState(false);
+  const friends = liveFriends(live);
+  // A 1:1 whose friend is gone has no other member: hide it.
+  const chats = live.groups
+    .filter((g) => !g.isDirect || chatMembers(live, g.id).length > 0)
+    .map((g) => ({ g, last: lastActivity(live, g.id) }))
+    .sort((a, b) => (b.last?.createdAt.toDate().getTime() ?? 0) - (a.last?.createdAt.toDate().getTime() ?? 0));
+
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={{ padding: 16, paddingTop: insets.top + 12, gap: 12 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={{ flex: 1, fontSize: 28, fontWeight: "700", color: c.text }} accessibilityRole="header">Chats</Text>
+        {friends.length > 0 && <Button small variant="secondary" title={making ? "Cancel" : "New group"} onPress={() => setMaking((v) => !v)} />}
+        <Button small variant="secondary" title="📤 Share data" onPress={() => router.push("/share")} />
+      </View>
+      {making && <NewGroup friends={friends} onDone={() => setMaking(false)} />}
+      {chats.length === 0 && (
+        <Card style={{ alignItems: "center", paddingVertical: 24 }}>
+          <Txt muted center>You can chat with your friends here. Add someone and a chat with them opens once they accept.</Txt>
+          <Button small title="Find friends" onPress={() => router.navigate("/friends")} />
+        </Card>
+      )}
+      {chats.map(({ g, last }) => {
+        const others = chatMembers(live, g.id);
+        const author = last && live.friends.find((f) => f.id === last.friendId);
+        const preview = !last ? "No messages yet" : last.createdBy === "agent" ? `🤖 ${last.text}` : `${author?.id === live.me?.id ? "You" : author?.name.split(" ")[0] ?? "Someone"}: ${last.text}`;
+        return (
+          <Pressable
+            key={String(g.id)}
+            onPress={() => openChat(g.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open chat ${chatTitle(live, g)}`}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+            <Card>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: c.surface2 }}>
+                  <Text style={{ fontSize: 22 }}>{g.isDirect ? others[0]?.avatar || "🙂" : "👥"}</Text>
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+                    <Txt bold>{chatTitle(live, g)}</Txt>
+                    {last && <Txt small muted>{timeLabel(last)}</Txt>}
+                  </View>
+                  <Text numberOfLines={1} style={{ fontSize: 14, color: c.text2 }}>
+                    {g.isDirect ? preview : `${others.length + 1} people · ${preview}`}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function NewGroup({ friends, onDone }: { friends: Friend[]; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [picked, setPicked] = useState<bigint[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toggle = (id: bigint) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const create = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await createGroup(name, picked);
+      onDone();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card>
+      <Input label="Group name" value={name} onChangeText={setName} placeholder="Weekend crew" maxLength={60} />
+      <Txt small muted>Only your friends can be in your groups.</Txt>
+      <Chips>
+        {friends.map((f) => (
+          <Chip key={String(f.id)} label={`${f.avatar || "🙂"} ${f.name}`} active={picked.includes(f.id)} onPress={() => toggle(f.id)} />
+        ))}
+      </Chips>
+      {error && <ErrorText>{error}</ErrorText>}
+      <Button title="Create group" onPress={create} loading={busy} disabled={!name.trim() || picked.length === 0} />
+    </Card>
+  );
+}
+
+function AddMembers({ live, group }: { live: LiveState; group: FriendGroup }) {
+  const inChat = new Set(live.members.filter((m) => m.groupId === group.id).map((m) => m.friendId));
+  const candidates = liveFriends(live).filter((f) => !inChat.has(f.id));
+  if (candidates.length === 0) return <Txt small muted>All your friends are already here.</Txt>;
+  return (
+    <Chips>
+      {candidates.map((f) => (
+        <Chip
+          key={String(f.id)}
+          label={`+ ${f.avatar || "🙂"} ${f.name}`}
+          onPress={() => addGroupMember(group.id, f.id).catch((e) => Alert.alert("Couldn't add them", errorText(e)))}
+        />
+      ))}
+    </Chips>
+  );
+}
+
+function ChatScreen({ live, group }: { live: LiveState; group: FriendGroup }) {
+  const c = useColors();
+  const insets = useSafeAreaInsets();
+  const [adding, setAdding] = useState(false);
   const scroll = useRef<ScrollView>(null);
   const [text, setText] = useState("");
   const [asCheckin, setAsCheckin] = useState(false);
@@ -46,8 +198,13 @@ export default function GroupScreen() {
   }, [live.feed.length]);
 
   const friendById = new Map(live.friends.map((f) => [f.id, f]));
-  const memberIds = new Set(live.members.filter((m) => m.groupId === live.group?.id).map((m) => m.friendId));
-  const members = live.friends.filter((f) => memberIds.has(f.id));
+  const members = chatMembers(live, group.id);
+  const title = chatTitle(live, group);
+  const onLeave = () =>
+    Alert.alert(`Leave ${title}?`, "You'll stop getting its messages.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Leave", style: "destructive", onPress: () => leaveGroup(group.id).catch((e) => Alert.alert("Couldn't leave", errorText(e))) },
+    ]);
 
   const submit = async () => {
     const body = text.trim();
@@ -66,35 +223,29 @@ export default function GroupScreen() {
     }
   };
 
-  if (live.status !== "ready") {
-    return (
-      <View style={{ flex: 1, backgroundColor: c.bg, padding: 16, paddingTop: insets.top + 12, gap: 12 }}>
-        <Text style={{ fontSize: 28, fontWeight: "700", color: c.text }}>Group</Text>
-        <Card>
-          <Txt muted={live.status !== "error"} style={live.status === "error" ? { color: c.warn } : undefined}>
-            {live.status === "error" ? live.error : live.status === "joining" ? "Joining your group…" : "Connecting to your group…"}
-          </Txt>
-        </Card>
-      </View>
-    );
-  }
-
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 8, gap: 6, borderBottomWidth: 1, borderColor: c.border }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={{ flex: 1, fontSize: 24, fontWeight: "700", color: c.text }} accessibilityRole="header">
-            {live.group?.name ?? "Group"}
+          <Pressable onPress={() => openChat(null)} accessibilityRole="button" accessibilityLabel="Back to chats" hitSlop={10}>
+            <Text style={{ fontSize: 26, color: c.accent }}>‹</Text>
+          </Pressable>
+          <Text style={{ flex: 1, fontSize: 24, fontWeight: "700", color: c.text }} accessibilityRole="header" numberOfLines={1}>
+            {title}
           </Text>
-          <Button small variant="secondary" title="📤 Share data" onPress={() => router.push("/share")} />
+          {!group.isDirect && <Button small variant="secondary" title={adding ? "Done" : "Add"} onPress={() => setAdding((v) => !v)} />}
+          {!group.isDirect && <Button small variant="ghost" title="Leave" onPress={onLeave} />}
         </View>
-        <View style={{ flexDirection: "row", gap: 4 }}>
-          {members.map((f) => (
-            <View key={String(f.id)} style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: c.surface2 }} accessibilityLabel={f.name}>
-              <Text style={{ fontSize: 16 }}>{f.avatar || "🙂"}</Text>
-            </View>
-          ))}
-        </View>
+        {!group.isDirect && (
+          <View style={{ flexDirection: "row", gap: 4 }}>
+            {members.map((f) => (
+              <View key={String(f.id)} style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: c.surface2 }} accessibilityLabel={f.name}>
+                <Text style={{ fontSize: 16 }}>{f.avatar || "🙂"}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        {adding && <AddMembers live={live} group={group} />}
       </View>
 
       <ScrollView ref={scroll} contentContainerStyle={{ padding: 12, gap: 10 }} keyboardDismissMode="interactive">
@@ -120,7 +271,7 @@ export default function GroupScreen() {
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder={asCheckin ? "What happened? e.g. ran my first 10K" : "Message the group"}
+            placeholder={asCheckin ? "What happened? e.g. ran my first 10K" : `Message ${group.isDirect ? title.split(" ")[0] : "the group"}`}
             placeholderTextColor={c.text3}
             maxLength={500}
             onSubmitEditing={submit}

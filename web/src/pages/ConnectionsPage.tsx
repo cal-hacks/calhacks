@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useDB } from "../lib/db";
+import { directChatWith, liveFriendId, openChat, useLive } from "../lib/live";
 import {
   acceptFriendRequest,
   currentUser,
@@ -22,8 +23,14 @@ import type { DB, User } from "../lib/types";
 import { Avatar } from "../components/Avatar";
 import { Toggle } from "../components/Toggle";
 
+/** Run a server call from a button; say what went wrong if it fails. */
+function act(call: () => Promise<unknown>) {
+  call().catch((e) => alert(`Couldn't do that: ${e instanceof Error ? e.message : String(e)}`));
+}
+
 export function ConnectionsPage() {
   const db = useDB();
+  const live = useLive();
   const me = currentUser(db)!;
   const [params] = useSearchParams();
   const welcome = params.get("welcome") === "1";
@@ -64,8 +71,8 @@ export function ConnectionsPage() {
                   <Avatar user={u} />
                   <PersonText user={u} extra="wants to connect" />
                   <div className="row-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => removeConnection(u.id)}>Decline</button>
-                    <button className="btn btn-primary btn-sm" onClick={() => acceptFriendRequest(c.id)}>Accept</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => act(() => removeConnection(u.id))}>Decline</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => act(() => acceptFriendRequest(c.id))}>Accept</button>
                   </div>
                 </li>
               );
@@ -77,12 +84,18 @@ export function ConnectionsPage() {
                 <li key={c.id} className="person">
                   <Avatar user={u} />
                   <PersonText user={u} extra="request sent" />
-                  <button className="btn btn-ghost btn-sm" onClick={() => removeConnection(u.id)}>Cancel</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => act(() => removeConnection(u.id))}>Cancel</button>
                 </li>
               );
             })}
           </ul>
         </section>
+      )}
+
+      {live.status !== "ready" && (
+        <div className={live.status === "error" ? "banner warn" : "card"}>
+          {live.status === "error" ? live.error : "Connecting to find friends…"}
+        </div>
       )}
 
       <FindFriends db={db} me={me} />
@@ -121,7 +134,7 @@ function RelationButton({ db, me, user }: { db: DB; me: User; user: User }) {
   if (rel === "friends") return <span className="pill pill-on">✓ Connected</span>;
   if (rel === "outgoing") return <span className="pill pill-off">Requested</span>;
   return (
-    <button className="btn btn-secondary btn-sm" onClick={() => sendFriendRequest(user.id)}>
+    <button className="btn btn-secondary btn-sm" onClick={() => act(() => sendFriendRequest(user.id))}>
       {rel === "incoming" ? "Accept" : "Add friend"}
     </button>
   );
@@ -176,7 +189,7 @@ function FindFriends({ db, me }: { db: DB; me: User }) {
       <input
         className="input"
         type="search"
-        placeholder="Search by name, @username or email"
+        placeholder="Search by name or @username"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Search people"
@@ -262,7 +275,10 @@ function FindFriends({ db, me }: { db: DB; me: User }) {
 }
 
 function FriendCard({ db, me, friend }: { db: DB; me: User; friend: User }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const liveId = liveFriendId(friend.id);
+  const chat = liveId === undefined ? undefined : directChatWith(liveId);
   const [applied, setApplied] = useState(false);
   const prefs = sharingWith(db, me.id, friend.id);
   const shareableGoals = db.goals.filter((g) => g.userId === me.id && g.shareWithFriends && !g.archived);
@@ -282,6 +298,18 @@ function FriendCard({ db, me, friend }: { db: DB; me: User; friend: User }) {
         </span>
         <span className="chevron" aria-hidden>{open ? "▴" : "▾"}</span>
       </button>
+      {chat && (
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => {
+            openChat(chat.id);
+            navigate("/group");
+          }}
+        >
+          💬 Message {friend.displayName.split(" ")[0]}
+        </button>
+      )}
 
       {open && (
         <div className="friend-body">
@@ -364,7 +392,7 @@ function FriendCard({ db, me, friend }: { db: DB; me: User; friend: User }) {
               type="button"
               className="btn btn-danger btn-sm"
               onClick={() => {
-                if (confirm(`Remove ${friend.displayName}? Your agent will stop sharing with them.`)) removeConnection(friend.id);
+                if (confirm(`Remove ${friend.displayName}? Your agent will stop sharing with them, and your chat with them closes.`)) act(() => removeConnection(friend.id));
               }}
             >
               Remove connection

@@ -30,10 +30,15 @@ export interface User {
   onboarded: boolean;
   /** Seed users are other people "on the platform" for the demo. */
   isSeed?: boolean;
+  /**
+   * Set for people mirrored from the live server (other signed-up users): their
+   * friend id there. Their `id` is `f_<remoteId>`. They can't log in here.
+   */
+  remoteId?: string;
   createdAt: number;
 }
 
-export type CalendarProvider = "google" | "outlook" | "apple";
+export type CalendarProvider = "google";
 export type PermissionState = "granted" | "denied" | "off";
 export type ScreenTimeMethod = "shortcut" | "screenshot" | "off";
 

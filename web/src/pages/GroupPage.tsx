@@ -1,6 +1,22 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { addCheckin, sendMessage, toggleReaction, useLive, votePlan, type LiveState } from "../lib/live";
-import type { FeedItem, Friend, Plan } from "../module_bindings/types";
+import { Link } from "react-router-dom";
+import {
+  addCheckin,
+  addGroupMember,
+  chatMembers,
+  chatTitle,
+  createGroup,
+  firstName,
+  leaveGroup,
+  liveFriends,
+  openChat,
+  sendMessage,
+  toggleReaction,
+  useLive,
+  votePlan,
+  type LiveState,
+} from "../lib/live";
+import type { FeedItem, Friend, FriendGroup, Plan } from "../module_bindings/types";
 import { Avatar } from "../components/Avatar";
 import { BeeLogo } from "../components/ui";
 import { PlusIcon } from "../components/icons";
@@ -29,8 +45,152 @@ function planFor(live: LiveState, item: FeedItem): Plan | undefined {
   return live.plans.find((p) => p.createdAt.toDate().getTime() === t);
 }
 
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Chats: the list of your chats, or the open one. */
 export function GroupPage() {
   const live = useLive();
+  if (live.status !== "ready") {
+    return (
+      <div className="page">
+        <header className="page-head">
+          <h1>Chats</h1>
+        </header>
+        <div className={live.status === "error" ? "banner warn" : "card"}>
+          {live.status === "error" ? live.error : live.status === "joining" ? "Signing you up…" : "Connecting…"}
+        </div>
+      </div>
+    );
+  }
+  return live.group ? <ChatView live={live} group={live.group} /> : <ChatList live={live} />;
+}
+
+function lastActivity(live: LiveState, groupId: bigint): FeedItem | undefined {
+  const items = live.allFeed.filter((f) => f.groupId === groupId);
+  return items[items.length - 1];
+}
+
+function ChatList({ live }: { live: LiveState }) {
+  const [making, setMaking] = useState(false);
+  const friends = liveFriends(live);
+  // A 1:1 whose friend is gone has no other member: hide it.
+  const chats = live.groups
+    .filter((g) => !g.isDirect || chatMembers(live, g.id).length > 0)
+    .map((g) => ({ g, last: lastActivity(live, g.id) }))
+    .sort((a, b) => (b.last?.createdAt.toDate().getTime() ?? 0) - (a.last?.createdAt.toDate().getTime() ?? 0));
+
+  return (
+    <div className="page">
+      <header className="page-head row-between">
+        <div>
+          <h1>Chats</h1>
+          <p className="muted">Talk with your friends, one-on-one or in groups. Only friends can message you.</p>
+        </div>
+        {friends.length > 0 && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMaking((v) => !v)}>
+            {making ? "Cancel" : "New group"}
+          </button>
+        )}
+      </header>
+      {making && <NewGroup friends={friends} onDone={() => setMaking(false)} />}
+      {chats.length === 0 && (
+        <div className="card empty">
+          <p>You can chat with your friends here. Add someone and a chat with them opens once they accept.</p>
+          <Link className="btn btn-primary btn-sm" to="/friends">Find friends</Link>
+        </div>
+      )}
+      <ul className="people card">
+        {chats.map(({ g, last }) => {
+          const others = chatMembers(live, g.id);
+          const author = last && live.friends.find((f) => f.id === last.friendId);
+          const preview = !last
+            ? "No messages yet"
+            : last.createdBy === "agent"
+              ? `🤖 ${last.text}`
+              : `${author?.id === live.me?.id ? "You" : firstName(author?.name)}: ${last.text}`;
+          return (
+            <li key={String(g.id)}>
+              <button type="button" className="person friend-summary" onClick={() => openChat(g.id)}>
+                <Avatar name={g.isDirect ? others[0]?.name ?? "?" : g.name} size={40} tone={g.isDirect ? "white" : "honey"} />
+                <span className="person-text">
+                  <strong>{chatTitle(live, g)}</strong>
+                  <small className="muted">{g.isDirect ? preview : `${others.length + 1} people · ${preview}`}</small>
+                </span>
+                {last && <small className="muted">{timeLabel(last)}</small>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function NewGroup({ friends, onDone }: { friends: Friend[]; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [picked, setPicked] = useState<bigint[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toggle = (id: bigint) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const create = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await createGroup(name, picked);
+      onDone();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="card stack-sm" onSubmit={create}>
+      <label className="field">
+        <span>Group name</span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekend crew" maxLength={60} />
+      </label>
+      <p className="small muted">Only your friends can be in your groups.</p>
+      <div className="chips">
+        {friends.map((f) => (
+          <button key={String(f.id)} type="button" className="chip" aria-pressed={picked.includes(f.id)} onClick={() => toggle(f.id)}>
+            {f.avatar} {f.name}
+          </button>
+        ))}
+      </div>
+      {error && <p className="form-error">{error}</p>}
+      <button className="btn btn-primary btn-sm" disabled={busy || !name.trim() || picked.length === 0}>Create group</button>
+    </form>
+  );
+}
+
+function AddMembers({ live, group }: { live: LiveState; group: FriendGroup }) {
+  const [error, setError] = useState<string | null>(null);
+  const inChat = new Set(live.members.filter((m) => m.groupId === group.id).map((m) => m.friendId));
+  const candidates = liveFriends(live).filter((f) => !inChat.has(f.id));
+  if (candidates.length === 0) return <p className="small muted">All your friends are already here.</p>;
+  return (
+    <div className="stack-sm">
+      <div className="chips">
+        {candidates.map((f) => (
+          <button
+            key={String(f.id)}
+            type="button"
+            className="chip chip-add"
+            onClick={() => addGroupMember(group.id, f.id).catch((e) => setError(errorText(e)))}
+          >
+            + {f.avatar} {f.name}
+          </button>
+        ))}
+      </div>
+      {error && <p className="form-error">{error}</p>}
+    </div>
+  );
+}
+
+function ChatView({ live, group }: { live: LiveState; group: FriendGroup }) {
+  const [adding, setAdding] = useState(false);
   const [text, setText] = useState("");
   const [asCheckin, setAsCheckin] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +198,9 @@ export function GroupPage() {
   const bottom = useRef<HTMLDivElement>(null);
 
   const friendById = new Map(live.friends.map((f) => [f.id, f]));
-  const memberIds = new Set(live.members.filter((m) => m.groupId === live.group?.id).map((m) => m.friendId));
+  const memberIds = new Set(live.members.filter((m) => m.groupId === group.id).map((m) => m.friendId));
   const members = live.friends.filter((f) => memberIds.has(f.id));
+  const title = chatTitle(live, group);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -63,34 +224,39 @@ export function GroupPage() {
     }
   };
 
-  if (live.status !== "ready") {
-    return (
-      <div className="page">
-        <header className="page-head">
-          <h1>Group</h1>
-        </header>
-        <div className={live.status === "error" ? "banner warn" : "card"}>
-          {live.status === "error" ? live.error : live.status === "joining" ? "Joining your group…" : "Connecting to your group…"}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="page group-page">
       <header className="page-head row-between">
         <div>
-          <h1>{live.group?.name ?? "Group"}</h1>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => openChat(null)}>‹ All chats</button>
+          <h1>{title}</h1>
           <p className="muted">Everyone here has an agent. Agents post wins and suggest plans; nothing is shared that a friend hasn't opted into.</p>
         </div>
-        <div className="group-members" aria-label="Members">
-          {members.map((f, i) => (
-            <span key={String(f.id)} title={`${f.name} · ${f.city}`}>
-              <Avatar name={f.name} size={32} tone={f.id === live.me?.id ? "honey" : i % 2 ? "soft" : "white"} />
-            </span>
-          ))}
+        <div className="stack-sm">
+          <div className="group-members" aria-label="Members">
+            {members.map((f, i) => (
+              <span key={String(f.id)} title={`${f.name} · ${f.city}`}>
+                <Avatar name={f.name} size={32} tone={f.id === live.me?.id ? "honey" : i % 2 ? "soft" : "white"} />
+              </span>
+            ))}
+          </div>
+          {!group.isDirect && (
+            <div className="row-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAdding((v) => !v)}>{adding ? "Done" : "Add friends"}</button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  if (confirm(`Leave ${title}? You'll stop getting its messages.`)) leaveGroup(group.id).catch((e) => setError(errorText(e)));
+                }}
+              >
+                Leave
+              </button>
+            </div>
+          )}
         </div>
       </header>
+      {adding && <AddMembers live={live} group={group} />}
 
       <section className="chat" aria-live="polite">
         {live.feed.length === 0 && <p className="empty">No messages yet. Say hi!</p>}
@@ -114,7 +280,7 @@ export function GroupPage() {
           className="input"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={asCheckin ? "What happened? e.g. ran my first 10K" : "Message the group"}
+          placeholder={asCheckin ? "What happened? e.g. ran my first 10K" : `Message ${group.isDirect ? firstName(title) : "the group"}`}
           maxLength={500}
           aria-label={asCheckin ? "Check-in" : "Message"}
         />

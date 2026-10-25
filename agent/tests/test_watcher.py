@@ -9,9 +9,9 @@ from agent_service.stdb import StdbClient
 from agent_service.watcher import Watcher
 
 STRING = {"String": []}
-COLUMN_TYPES = {c: STRING for c in ("text", "name", "timezone", "source", "description", "status", "type",
+COLUMN_TYPES = {c: STRING for c in ("text", "name", "city", "timezone", "source", "description", "status", "type",
                                     "value", "place_name", "caption", "share_level")}
-COLUMN_TYPES |= {"obscurity_score": {"F64": []}, "roast_ok": {"Bool": []}}
+COLUMN_TYPES |= {"obscurity_score": {"F64": []}, "roast_ok": {"Bool": []}, "is_direct": {"Bool": []}}
 
 
 class FakeDb:
@@ -19,14 +19,14 @@ class FakeDb:
 
     def __init__(self):
         self.tables = {
-            "friend": [{"id": 1, "name": "Maya Chen", "timezone": "America/Chicago"},
-                       {"id": 2, "name": "Sam Lee", "timezone": "America/Los_Angeles"}],
+            "friend": [{"id": 1, "name": "Maya Chen", "city": "Austin", "timezone": "America/Chicago"},
+                       {"id": 2, "name": "Sam Lee", "city": "Seattle", "timezone": "America/Los_Angeles"}],
             "membership": [{"friend_id": 1, "group_id": 7}, {"friend_id": 2, "group_id": 7}],
             "checkin": [{"id": 10, "friend_id": 1, "text": "old news", "source": "app"}],
             "goal": [{"id": 3, "friend_id": 2, "description": "Read 2 books", "status": "active"}],
             "feed_item": [{"id": 50, "group_id": 7, "friend_id": 1, "text": "hey", "kind": "message"}],
             "plan": [],
-            "friend_group": [{"id": 7}],
+            "friend_group": [{"id": 7, "is_direct": False}],
             "stat": [{"id": 100, "friend_id": 1, "type": "steps", "value": '{"count": 4000}', "source": "seed"}],
             "photo": [],
             "consent": [
@@ -65,13 +65,19 @@ class FakeDb:
 
 
 class FakeLlm:
-    def __init__(self, reply):
+    def __init__(self, reply, ideas=None):
         self.reply = reply
+        self.ideas = ideas
         self.prompts = []
+        self.idea_prompts = []
 
     async def write_json(self, system, prompt, schema):
         self.prompts.append(prompt)
         return self.reply
+
+    async def search_json(self, system, prompt):
+        self.idea_prompts.append(prompt)
+        return self.ideas
 
 
 async def no_updates():
@@ -148,14 +154,45 @@ async def test_catch_up_message_proposes_plan():
     await w.tick(updates)
     (reducer, args), = db.calls
     assert reducer == "propose_plan" and args["groupId"] == 7
-    assert json.loads(args["options"])[0]["startsAt"] == start.isoformat()
+    option, = json.loads(args["options"])
+    assert option["startsAt"] == start.isoformat()
+    # Austin and Seattle are far apart, and the fake Claude has no ideas: a virtual fallback.
+    assert option["label"].startswith("🎬 Watch party · ")
+    assert args["title"] == "Virtual hangout 🎬"
+
+
+async def test_plan_ideas_use_the_chat_and_what_friends_shared():
+    ideas = {"title": "Game night 🎮", "options": [
+        {"slot": 1, "label": "🎮 Gartic Phone night", "detail": "Sam's been asking for a rematch.", "in_person": []},
+    ]}
+    db, w = setup()
+    w.llm.ideas = ideas
+    await w.tick(no_updates)
+    start = datetime(2026, 10, 27, 1, tzinfo=UTC)
+    block = [(start, start + timedelta(hours=3))]
+
+    async def updates():
+        return [FriendUpdate(Friend(1, "Maya Chen", "Austin", "America/Chicago"), highlights=["ran a 10K"],
+                             free_blocks=block),
+                FriendUpdate(Friend(2, "Sam Lee", "Seattle", "America/Los_Angeles"), free_blocks=block)]
+
+    db.tables["feed_item"].append({"id": 51, "group_id": 7, "friend_id": 2, "text": "let's catch up, I miss gartic", "kind": "message"})
+    await w.tick(updates)
+    prompt, = w.llm.idea_prompts
+    assert "Maya: hey" in prompt and "Sam: let's catch up, I miss gartic" in prompt
+    assert "Maya: ran a 10K" in prompt
+    (_, args), = db.calls
+    assert args["title"] == "Game night 🎮"
+    option, = json.loads(args["options"])
+    assert option["label"].startswith("🎮 Gartic Phone night · ")
+    assert option["startsAt"] == start.isoformat()
 
 
 async def test_reseed_is_not_news():
     db, w = setup()
     await w.tick(no_updates)
     # reset_demo + seed_demo: a new group, and the seeded history gets higher ids.
-    db.tables["friend_group"] = [{"id": 8}]
+    db.tables["friend_group"] = [{"id": 8, "is_direct": False}]
     db.tables["checkin"] = [{"id": 20, "friend_id": 1, "text": "seeded again", "source": "app"}]
     db.tables["feed_item"] = [{"id": 90, "group_id": 8, "friend_id": 1, "text": "we should catch up", "kind": "message"}]
     await w.tick(no_updates)
@@ -166,6 +203,58 @@ async def test_reseed_is_not_news():
     db.tables["membership"] = [{"friend_id": 1, "group_id": 8}]
     await w.tick(no_updates)
     assert len(db.calls) == 1
+
+
+async def test_posts_go_to_a_group_not_a_one_to_one():
+    db, w = setup(reply=None)
+    # Maya is also in a 1:1 (id 3, lower) with Sam.
+    db.tables["friend_group"].append({"id": 3, "is_direct": True})
+    db.tables["membership"] += [{"friend_id": 1, "group_id": 3}, {"friend_id": 2, "group_id": 3}]
+    await w.tick(no_updates)
+    db.tables["checkin"].append({"id": 11, "friend_id": 1, "text": "ran a 10K", "source": "app"})
+    await w.tick(no_updates)
+    (_, args), = db.calls
+    assert args["groupId"] == 7
+    # Only 1:1s: no post at all.
+    db.calls.clear()
+    db.tables["membership"] = [m for m in db.tables["membership"] if m["group_id"] != 7]
+    db.tables["checkin"].append({"id": 12, "friend_id": 1, "text": "another 10K", "source": "app"})
+    await w.tick(no_updates)
+    assert db.calls == []
+
+
+async def test_new_chats_do_not_reset_the_watcher():
+    db, w = setup(reply=None)
+    await w.tick(no_updates)
+    db.tables["friend_group"].append({"id": 9, "is_direct": True})
+    db.tables["checkin"].append({"id": 11, "friend_id": 1, "text": "ran a 10K", "source": "app"})
+    await w.tick(no_updates)
+    assert len(db.calls) == 1
+
+
+async def test_plan_in_a_one_to_one_uses_only_its_two_people():
+    db, w = setup()
+    db.tables["friend"].append({"id": 4, "name": "Jordan Park", "city": "New York", "timezone": "America/New_York"})
+    db.tables["friend_group"].append({"id": 3, "is_direct": True})
+    db.tables["membership"] += [{"friend_id": 1, "group_id": 3}, {"friend_id": 2, "group_id": 3}]
+    await w.tick(no_updates)
+    start = datetime(2026, 10, 27, 1, tzinfo=UTC)
+    block = [(start, start + timedelta(hours=3))]
+
+    async def updates():
+        # Jordan has no free time, but isn't in this chat, so it doesn't matter.
+        return [FriendUpdate(Friend(1, "Maya Chen", "Austin", "America/Chicago"), free_blocks=block),
+                FriendUpdate(Friend(2, "Sam Lee", "Seattle", "America/Los_Angeles"), free_blocks=block),
+                FriendUpdate(Friend(4, "Jordan Park", "New York", "America/New_York"))]
+
+    db.tables["feed_item"].append({"id": 51, "group_id": 3, "friend_id": 2, "text": "let's catch up this week", "kind": "message"})
+    await w.tick(updates)
+    (reducer, args), = db.calls
+    assert reducer == "propose_plan" and args["groupId"] == 3
+    options = json.loads(args["options"])
+    assert options[0]["startsAt"] == start.isoformat()
+    assert all("Jordan" not in o.get("detail", "") for o in options)
+
 
 def stat(db, id, friend_id, type, value, source="shortcut"):
     db.tables["stat"].append({"id": id, "friend_id": friend_id, "type": type, "value": json.dumps(value), "source": source})

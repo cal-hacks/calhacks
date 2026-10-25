@@ -21,8 +21,11 @@ import type { ScreenTimeMethod } from "../lib/types";
 import { Button, Card, Pill, Row, Segmented, Txt } from "./ui";
 import { useColors } from "./theme";
 
-/** Calendar, location, photo and screen time access. Used in onboarding and Settings. */
-export function PermissionCards() {
+type Section = "calendar" | "location" | "photos" | "screenTime";
+
+/** Calendar, location, photo and screen time access, or just the `only` ones. Used in onboarding and Settings. */
+export function PermissionCards({ only }: { only?: Section[] } = {}) {
+  const show = (s: Section) => !only || only.includes(s);
   const db = useDB();
   const me = currentUser(db)!;
   const perms = permissionsOf(db, me.id);
@@ -64,7 +67,7 @@ export function PermissionCards() {
 
   return (
     <View style={{ gap: 12 }}>
-      <PermCard icon="🗓️" title="Calendars" on={calendarOn} status={calendarOn ? "Connected" : "Not connected"} body="Your agent reads free/busy only, so it can suggest times. Event titles stay private.">
+      {show("calendar") && <PermCard icon="🗓️" title="Calendars" on={calendarOn} status={calendarOn ? "Connected" : "Not connected"} body="Your agent reads free/busy only, so it can suggest times. Event titles stay private.">
         {calendarAccounts.length > 0 && (
           <View style={{ gap: 6 }}>
             {calendarAccounts.map((a) => (
@@ -83,9 +86,9 @@ export function PermissionCards() {
         <Txt small muted>
           Covers iCloud, Google and Outlook. Missing one? Add it in iOS Settings → Apps → Calendar → Calendar Accounts, then tap Refresh.
         </Txt>
-      </PermCard>
+      </PermCard>}
 
-      <PermCard icon="📍" title="Location" on={perms.location === "granted"} status={perms.location === "granted" ? "Allowed" : perms.location === "denied" ? "Blocked" : "Off"} body="Tracks time at places you name in a goal, like “the library”. Friends only see places you choose to share, at city level.">
+      {show("location") && <PermCard icon="📍" title="Location" on={perms.location === "granted"} status={perms.location === "granted" ? "Allowed" : perms.location === "denied" ? "Blocked" : "Off"} body="Tracks time at places you name in a goal, like “the library”. Friends only see places you choose to share, at city level.">
         <Row wrap>
           {perms.location === "granted" ? (
             <Button small variant="ghost" title="Turn off" onPress={() => setPermissions({ location: "off" })} />
@@ -94,9 +97,9 @@ export function PermissionCards() {
           )}
           {perms.location === "denied" && <Button small variant="secondary" title="Open Settings" onPress={() => Linking.openSettings()} />}
         </Row>
-      </PermCard>
+      </PermCard>}
 
-      <PermCard icon="📸" title="Photos" on={perms.photos === "granted"} status={perms.photos === "granted" ? "Allowed" : perms.photos === "denied" ? "Blocked" : "Off"} body="Your agent never scans your library. It only sees photos you pick, and reads where and when they were taken.">
+      {show("photos") && <PermCard icon="📸" title="Photos" on={perms.photos === "granted"} status={perms.photos === "granted" ? "Allowed" : perms.photos === "denied" ? "Blocked" : "Off"} body="Your agent never scans your library. It only sees photos you pick, and reads where and when they were taken.">
         <Row wrap>
           {perms.photos === "granted" ? (
             <Button small variant="ghost" title="Turn off" onPress={() => setPermissions({ photos: "off" })} />
@@ -105,9 +108,9 @@ export function PermissionCards() {
           )}
           {perms.photos === "denied" && <Button small variant="secondary" title="Open Settings" onPress={() => Linking.openSettings()} />}
         </Row>
-      </PermCard>
+      </PermCard>}
 
-      <ScreenTimeCard />
+      {show("screenTime") && <ScreenTimeCard />}
     </View>
   );
 }

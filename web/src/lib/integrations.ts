@@ -1,11 +1,8 @@
-import type { CalendarProvider, Id } from "./types";
 import type { ContactEntry, GoogleProfile } from "./api";
 import { AgentError, agentPost } from "./agentApi";
 
 // Browser-side glue for third-party sign-in, device permissions and contacts.
 // Google Calendar tokens go to the agent service for free/busy (agentApi.ts).
-// Outlook/Apple OAuth needs server secrets and only runs when
-// VITE_AGENT_API_URL is set.
 
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 export const AGENT_API_URL = import.meta.env.VITE_AGENT_API_URL as string | undefined;
@@ -123,27 +120,25 @@ export async function signInWithGoogleAndCalendar(): Promise<GoogleProfile | nul
 }
 
 /**
- * Connect a calendar. Google uses the in-browser token flow when a client ID is
- * configured; other providers go through the agent service's OAuth routes.
- * Without either, it falls back to a demo prompt so the flow is clickable.
+ * Connect Google Calendar: through the agent service's sign-in when it's set
+ * up, else the in-browser token flow. Without either, a demo prompt keeps the
+ * flow clickable.
  */
-export async function connectCalendar(provider: CalendarProvider, userId: Id, emailHint?: string): Promise<CalendarConnectResult> {
-  if (provider === "google") {
-    // Preferred: the agent service runs Google's sign-in and keeps a refresh
-    // token, so sync never expires. It sends the browser back here with
-    // ?connected=google&account=..., which PermissionCards picks up.
-    try {
-      const { url } = await agentPost<{ url: string }>("/oauth/google/start", {
-        return_to: window.location.href.split("?")[0],
-      });
-      window.location.href = url;
-      return { status: "redirecting" };
-    } catch (e) {
-      // 503: the service has no Google client secret; use the browser token flow.
-      if (!(e instanceof AgentError && e.status === 503)) throw e;
-    }
+export async function connectCalendar(emailHint?: string): Promise<CalendarConnectResult> {
+  // Preferred: the agent service runs Google's sign-in and keeps a refresh
+  // token, so sync never expires. It sends the browser back here with
+  // ?connected=google&account=..., which PermissionCards picks up.
+  try {
+    const { url } = await agentPost<{ url: string }>("/oauth/google/start", {
+      return_to: window.location.href.split("?")[0],
+    });
+    window.location.href = url;
+    return { status: "redirecting" };
+  } catch (e) {
+    // 503: the service has no Google client secret; use the browser token flow.
+    if (!(e instanceof AgentError && e.status === 503)) throw e;
   }
-  if (provider === "google" && GOOGLE_CLIENT_ID) {
+  if (GOOGLE_CLIENT_ID) {
     await loadGoogleIdentity();
     const token = await requestGoogleToken("https://www.googleapis.com/auth/calendar.freebusy email", emailHint);
     if (!token) return { status: "cancelled" };
@@ -160,14 +155,7 @@ export async function connectCalendar(provider: CalendarProvider, userId: Id, em
     return { status: "connected", account };
   }
 
-  if (AGENT_API_URL) {
-    const ret = encodeURIComponent(window.location.href.split("?")[0]);
-    window.location.href = `${AGENT_API_URL}/oauth/${provider}/start?user_id=${userId}&return_to=${ret}`;
-    return { status: "redirecting" };
-  }
-
-  const label = { google: "Google", outlook: "Outlook", apple: "iCloud" }[provider];
-  const account = window.prompt(`Demo mode: which ${label} account should we connect?`, emailHint ?? "");
+  const account = window.prompt("Demo mode: which Google account should we connect?", emailHint ?? "");
   return account ? { status: "connected", account } : { status: "cancelled" };
 }
 
