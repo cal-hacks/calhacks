@@ -1,28 +1,51 @@
-// Demo data: three college friends in three time zones. Times are relative
+// Demo data for the social connection story: the Class of '25 group chat that
+// died after graduation, brought back by everyone's agents. Times are relative
 // to when seed_demo runs, so the data always looks like "this week".
 //
+// The cast:
+// - Riley (the demo login, San Francisco) and Priya (Berkeley) live ~10 miles
+//   apart, so plans suggest meeting in person.
+// - Maya (Austin) is one run from her weekly goal: a phone signed in as Maya
+//   logs it live for confetti and a goal-win post.
+// - Sam (Seattle) found a llama farm and opted into roasts.
+// - Jordan (New York) has a heavy Canvas week, so plans land after it.
+// - Alex (Boston) isn't connected yet and has asked to be Riley's friend.
+// Nobody claims Sam, Jordan, Priya or Alex, so they accept friend requests at
+// once and say hi (cast.ts), which is what a judge who signs up experiences.
+//
 // UTC offsets are fixed (daylight time, valid until Nov 1, 2026). The agent
-// service should use real time-zone math; this is only for seed rows.
+// service uses real time-zone math; this is only for seed rows.
 
 import { Timestamp } from 'spacetimedb';
 import { befriend } from './friends';
 import { createDefaults, type Ctx } from './schema';
 
 const HOUR = 3600 * 1000;
-const DAY = 24 * HOUR;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// Same people as the Orbit app's seed (web/src/lib/seed.ts). Riley is the
-// demo login; the others are the demo phones.
+// Same people as the apps' local seed (web/src/lib/seed.ts,
+// mobile/src/lib/seed.ts). Riley is the demo login; Maya is the demo phone.
 const FRIENDS = [
   {
     key: 'riley',
     username: 'demo',
     name: 'Riley Demo',
-    city: 'Palo Alto, CA',
+    city: 'San Francisco, CA',
     timezone: 'America/Los_Angeles',
     offset: -7,
     avatar: '📚',
-    consent: { health: 'highlights', calendar: 'highlights', canvas: 'planning_only', screen_time: 'highlights', photos: 'highlights' },
+    consent: { health: 'off', calendar: 'highlights', canvas: 'planning_only', screen_time: 'highlights', photos: 'highlights' },
+    settings: { roastOk: false, checkOnMe: false, trusted: [], nudgePreview: true },
+  },
+  {
+    key: 'priya',
+    username: 'priya.k',
+    name: 'Priya Kumar',
+    city: 'Berkeley, CA',
+    timezone: 'America/Los_Angeles',
+    offset: -7,
+    avatar: '🩺',
+    consent: { health: 'off', calendar: 'highlights', canvas: 'off', screen_time: 'off', photos: 'highlights' },
     settings: { roastOk: false, checkOnMe: false, trusted: [], nudgePreview: true },
   },
   {
@@ -33,7 +56,7 @@ const FRIENDS = [
     timezone: 'America/Chicago',
     offset: -5,
     avatar: '🏃‍♀️',
-    consent: { health: 'highlights', calendar: 'highlights', canvas: 'planning_only', screen_time: 'off', photos: 'highlights' },
+    consent: { health: 'off', calendar: 'highlights', canvas: 'planning_only', screen_time: 'off', photos: 'highlights' },
     settings: { roastOk: false, checkOnMe: true, trusted: ['sam'], nudgePreview: true },
   },
   {
@@ -44,7 +67,7 @@ const FRIENDS = [
     timezone: 'America/Los_Angeles',
     offset: -7,
     avatar: '🦙',
-    consent: { health: 'highlights', calendar: 'highlights', canvas: 'off', screen_time: 'highlights', photos: 'highlights' },
+    consent: { health: 'off', calendar: 'highlights', canvas: 'off', screen_time: 'highlights', photos: 'highlights' },
     settings: { roastOk: true, checkOnMe: false, trusted: [], nudgePreview: true },
   },
   {
@@ -55,22 +78,19 @@ const FRIENDS = [
     timezone: 'America/New_York',
     offset: -4,
     avatar: '⚖️',
-    consent: { health: 'planning_only', calendar: 'highlights', canvas: 'highlights', screen_time: 'highlights', photos: 'off' },
+    consent: { health: 'off', calendar: 'highlights', canvas: 'highlights', screen_time: 'highlights', photos: 'off' },
     settings: { roastOk: false, checkOnMe: false, trusted: [], nudgePreview: true },
   },
 ] as const;
 
 type Key = (typeof FRIENDS)[number]['key'];
 
-// People on the platform who aren't in the demo group: someone new can find
-// and add them. Nobody claims them, so they accept requests right away.
-const OTHERS = [
-  { username: 'priya.k', name: 'Priya Kumar', city: 'Chicago, IL', timezone: 'America/Chicago', avatar: '🩺' },
-  { username: 'alexr', name: 'Alex Rivera', city: 'Boston, MA', timezone: 'America/New_York', avatar: '🧗' },
-];
+// On the platform but not in the group yet: Alex has asked to be Riley's friend.
+const ALEX = { username: 'alexr', name: 'Alex Rivera', city: 'Boston, MA', timezone: 'America/New_York', avatar: '🧗' };
 
 export const DEMO_CODES = {
   riley: 'RILEY-1',
+  priya: 'PRIYA-1',
   maya: 'MAYA-1',
   sam: 'SAM-1',
   jordan: 'JORDAN-1',
@@ -131,66 +151,31 @@ export function seedDemo(ctx: Ctx) {
   }
   // The group are all friends with each other, each pair with a 1:1 chat.
   FRIENDS.forEach((a, i) => FRIENDS.slice(i + 1).forEach(b => befriend(ctx, ids[a.key], ids[b.key])));
-  for (const o of OTHERS) {
-    const row = ctx.db.friend.insert({ id: 0n, identity: undefined, ...o });
-    createDefaults(ctx, row.id);
-  }
+  const alex = ctx.db.friend.insert({ id: 0n, identity: undefined, ...ALEX });
+  createDefaults(ctx, alex.id);
 
   const offsetOf = (k: Key) => FRIENDS.find(f => f.key === k)!.offset;
   const at = (k: Key, daysFromToday: number, hour: number) =>
     localMidnight(now, offsetOf(k), daysFromToday) + hour * HOUR;
   const addStat = (k: Key, type: string, value: object, ms: number) =>
-    ctx.db.stat.insert({
-      id: 0n,
-      friendId: ids[k],
-      type,
-      value: JSON.stringify(value),
-      recordedAt: ts(ms),
-      source: 'seed',
-    });
+    ctx.db.stat.insert({ id: 0n, friendId: ids[k], type, value: JSON.stringify(value), recordedAt: ts(ms), source: 'seed' });
 
-  // --- Last 7 days of stats ---
-  const steps: Record<Key, number[]> = {
-    riley: [7200, 8100, 6500, 9300, 7800, 10200, 6900],
-    maya: [11200, 9800, 14300, 8700, 12100, 15800, 10400],
-    sam: [6400, 7100, 5200, 9900, 13400, 8800, 6000],
-    jordan: [3900, 4200, 3100, 5600, 2800, 4100, 3500],
-  };
-  // [bedtime hour (may be past 24), hours slept]
-  const sleep: Record<Key, [number, number][]> = {
-    riley: [[23.5, 7], [24, 6.75], [23.25, 7.5], [23.75, 7], [24.5, 7.25], [24, 8], [23.5, 7]],
-    maya: [[22.5, 7.5], [23, 7], [22.75, 7.25], [23.25, 7], [22.5, 7.5], [23.5, 8], [22.75, 7.25]],
-    sam: [[24.5, 7], [25, 6.5], [24.75, 7.25], [25.5, 6.5], [26, 7.5], [24, 8], [24.25, 7]],
-    jordan: [[25.5, 5.5], [26, 5], [25.75, 5.25], [26.5, 5], [25, 6], [24.5, 7], [26, 5]],
-  };
-  for (const f of FRIENDS) {
-    for (let d = -7; d <= -1; d++) {
-      const i = d + 7;
-      addStat(f.key, 'steps', { count: steps[f.key][i] }, at(f.key, d, 23));
-      const [bed, hours] = sleep[f.key][i];
-      addStat(f.key, 'sleep', {
-        start: new Date(at(f.key, d, bed)).toISOString(),
-        end: new Date(at(f.key, d, bed + hours)).toISOString(),
-        hours,
-      }, at(f.key, d + 1, 9));
-    }
-  }
-  for (const [d, km, min] of [[-6, 5.2, 29], [-4, 6.0, 33], [-2, 8.1, 46]] as const) {
-    addStat('maya', 'workout', { kind: 'run', distance_km: km, minutes: min }, at('maya', d, 7));
-  }
-  addStat('sam', 'workout', { kind: 'climbing', minutes: 90 }, at('sam', -3, 19));
-  for (const [k, hours, top] of [
-    ['sam', 6.4, ['TikTok', 'Instagram', 'YouTube']],
-    ['jordan', 2.1, ['Canvas', 'Slack', 'Safari']],
+  // Alex asked Riley yesterday: accept it on stage.
+  ctx.db.friendship.insert({ id: 0n, fromId: alex.id, toId: ids.riley, status: 'pending', createdAt: ts(at('riley', -1, 18)) });
+
+  // --- What agents know (no Health: it's out for now) ---
+  for (const [k, hours, top, pickups] of [
+    ['sam', 6.4, ['TikTok', 'Instagram', 'YouTube'], 142],
+    ['jordan', 2.1, ['Canvas', 'Slack', 'Safari'], 58],
   ] as const) {
-    addStat(k, 'screen_time', { daily_avg_hours: hours, top_apps: top, pickups: k === 'sam' ? 142 : 58 }, at(k, -1, 21));
+    addStat(k, 'screen_time', { daily_avg_hours: hours, top_apps: top, pickups }, at(k, -1, 21));
   }
-  addStat('jordan', 'busy_week', { reason: 'deadlines', count: 4, through: localDate(now, -4, 3) }, at('jordan', -1, 12));
+  addStat('jordan', 'busy_week', { reason: 'deadlines', count: 4, through: localDate(now, -4, 2) }, at('jordan', -1, 12));
   addStat('jordan', 'canvas_deadlines', {
     items: ['Moot court brief', 'Contracts memo', 'Evidence reading', 'Clinic intake notes'],
   }, at('jordan', -1, 12));
 
-  // --- Goals ---
+  // --- Goals (Maya's matches the demo phone's local goal: one run to go) ---
   const goals: [Key, string, number, number][] = [
     ['maya', 'Run 4 times this week', 4, 3],
     ['sam', 'Read 2 books this month', 2, 1],
@@ -205,18 +190,26 @@ export function seedDemo(ctx: Ctx) {
     id: 0n,
     friendId: ids.sam,
     placeName: 'Llama farm near Snohomish, WA',
-    takenAt: ts(at('sam', -2, 14)),
+    takenAt: ts(at('sam', -3, 14)),
     obscurityScore: 0.92,
     caption: 'Sam made a new friend. He is fluffier than all of us.',
   });
   ctx.db.photoLocation.insert({ photoId: llama.id, lat: 47.91, lng: -122.09 });
 
-  // --- Check-ins ---
-  ctx.db.checkin.insert({ id: 0n, friendId: ids.maya, text: 'longest run since college 🏃‍♀️', createdAt: ts(at('maya', -2, 8)), source: 'app' });
-  ctx.db.checkin.insert({ id: 0n, friendId: ids.jordan, text: 'surviving brief week ☕', createdAt: ts(at('jordan', -1, 22)), source: 'app' });
+  // --- Check-ins (each became an agent post below) ---
+  ctx.db.checkin.insert({ id: 0n, friendId: ids.maya, text: 'longest run since college 🏃‍♀️', createdAt: ts(at('maya', -8, 8)), source: 'app' });
+  ctx.db.checkin.insert({ id: 0n, friendId: ids.jordan, text: 'surviving brief week ☕', createdAt: ts(at('jordan', -2, 22)), source: 'app' });
 
-  // --- Group chat history ---
+  // --- Chats ---
+  const chatWith = (a: Key, b: Key) => {
+    for (const m of ctx.db.membership.friendId.filter(ids[a])) {
+      const g = ctx.db.friendGroup.id.find(m.groupId);
+      if (g?.isDirect && [...ctx.db.membership.groupId.filter(g.id)].some(x => x.friendId === ids[b])) return g.id;
+    }
+    throw new Error(`no 1:1 for ${a} and ${b}`);
+  };
   const post = (
+    chat: bigint,
     k: Key | null,
     kind: string,
     text: string,
@@ -227,7 +220,7 @@ export function seedDemo(ctx: Ctx) {
   ) =>
     ctx.db.feedItem.insert({
       id: 0n,
-      groupId: group.id,
+      groupId: chat,
       friendId: k ? ids[k] : 0n,
       kind,
       text,
@@ -236,15 +229,60 @@ export function seedDemo(ctx: Ctx) {
       createdAt: ts(ms),
       localDate: k && daysFromToday !== undefined ? localDate(now, offsetOf(k), daysFromToday) : '',
     });
+  const g = group.id;
+  const say = (k: Key, text: string, ms: number, replyTo = 0n) => post(g, k, 'message', text, 'friend', ms, replyTo);
+  const react = (item: { id: bigint }, who: Key[], emoji: string) =>
+    who.forEach(k => ctx.db.reaction.insert({ id: 0n, feedItemId: item.id, friendId: ids[k], emoji }));
 
-  post('jordan', 'message', 'is it just me or has this chat been dead since graduation 💀', 'friend', at('jordan', -5, 21));
-  post('maya', 'message', 'it’s not just you lol', 'friend', at('maya', -5, 23));
-  const run = post('maya', 'highlight', 'Maya ran 8.1 km this morning, her longest run since college 🏃‍♀️ Anyone want to join her virtual 5K?', 'agent', at('maya', -2, 9), 0n, -2);
-  post('sam', 'message', 'MAYA 👏👏', 'friend', at('sam', -2, 9.5), run.id);
-  const farm = post('sam', 'obscure_place', 'Weirdest place of the week: Sam at a llama farm outside Seattle 🦙', 'agent', at('sam', -2, 16), 0n, -2);
-  post('jordan', 'message', 'I need context immediately', 'friend', at('jordan', -2, 15), farm.id);
-  post('sam', 'roast', 'Screen Time champion of the week 📱👑 Sam, averaging 6.4 hours. A true dedication to the craft.', 'agent', at('sam', -1, 20), 0n, -1);
-  post('sam', 'message', 'I will not be taking questions', 'friend', at('sam', -1, 20.5));
+  // The group chat: dead since graduation, revived by everyone's agents.
+  say('jordan', 'is it just me or has this chat been dead since graduation 💀', at('jordan', -10, 21));
+  say('maya', 'it’s not just you lol', at('maya', -10, 22));
+  const rule = say('riley', 'ok new rule: we are NOT letting this chat die. I got us all on Waggle 🐝', at('riley', -9, 20));
+  react(rule, ['priya', 'maya'], '❤️');
+  const run = post(g, 'maya', 'highlight', 'Maya just ran her longest run since college 🏃‍♀️ Anyone want to join her for a virtual 5K?', 'agent', at('maya', -8, 9), 0n, -8);
+  say('sam', 'MAYA 👏👏', at('sam', -8, 9.5), run.id);
+  react(run, ['riley', 'sam', 'priya'], '🎉');
+
+  // Last week's catch-up call: proposed, voted, confirmed.
+  const planAt = ts(at('riley', -7, 19));
+  const plan = ctx.db.plan.insert({ id: 0n, groupId: g, title: 'Catch-up call 📞', status: 'open', confirmedOptionId: 0n, createdAt: planAt });
+  const day = (d: number) => WEEKDAYS[new Date(localMidnight(now, -7, d) - 7 * HOUR).getUTCDay()];
+  const optA = ctx.db.planOption.insert({ id: 0n, planId: plan.id, label: `📞 Video call · ${day(-5)} 6 PM PT / 9 PM ET`, detail: 'Everyone’s free for 2h+', startsAt: ts(at('riley', -5, 18)) });
+  ctx.db.planOption.insert({ id: 0n, planId: plan.id, label: `📞 Video call · ${day(-4)} 7 PM PT / 10 PM ET`, detail: 'Everyone’s free for 1h+', startsAt: ts(at('riley', -4, 19)) });
+  for (const k of ['riley', 'priya', 'maya', 'sam'] as const) {
+    ctx.db.planVote.insert({ id: 0n, planId: plan.id, friendId: ids[k], optionId: optA.id });
+  }
+  ctx.db.plan.id.update({ ...plan, status: 'confirmed', confirmedOptionId: optA.id });
+  ctx.db.feedItem.insert({ id: 0n, groupId: g, friendId: 0n, kind: 'plan_proposal', text: plan.title, createdBy: 'agent', replyToId: 0n, createdAt: planAt, localDate: '' });
+  const call = say('riley', 'that call was so needed 🥹 same time next month?', at('riley', -5, 21));
+  react(call, ['priya', 'maya', 'jordan'], '❤️');
+
+  say('priya', 'update: I officially moved to Berkeley for my PhD 🐻 Riley we’re like 20 min apart now', at('priya', -5, 12));
+  say('riley', 'WAIT. we are hanging out asap', at('riley', -5, 12.5));
+  const farm = post(g, 'sam', 'obscure_place', 'Weirdest place of the week: Sam at a llama farm outside Seattle 🦙', 'agent', at('sam', -3, 16), 0n, -3);
+  say('jordan', 'I need context immediately', at('jordan', -3, 19.25), farm.id);
+  say('sam', 'his name is Gerald and he is my best friend now', at('sam', -3, 16.5), farm.id);
+  react(farm, ['riley', 'priya', 'maya', 'jordan'], '😂');
+  const brief = post(g, 'jordan', 'highlight', 'Jordan is deep in moot court prep this week ⚖️ Send snacks (or memes).', 'agent', at('jordan', -2, 22.5), 0n, -2);
+  say('maya', 'sending you strength 💪 you got this', at('maya', -2, 22), brief.id);
+  const roast = post(g, 'sam', 'roast', 'Screen Time champion of the week 📱👑 Sam, averaging 6.4 hours a day. A true dedication to the craft.', 'agent', at('sam', -1, 20), 0n, -1);
+  say('sam', 'I will not be taking questions', at('sam', -1, 20.5), roast.id);
+  react(roast, ['riley', 'maya', 'priya', 'jordan'], '😂');
+  say('maya', 'ok I need a watch party, what is everyone watching rn', at('maya', -1, 21));
+  say('priya', 'also has anyone played Gartic Phone?? my lab is obsessed', at('priya', -1, 19.5));
+  say('jordan', 'free after Wednesday, brief is due then 🙏', at('jordan', -1, 23));
+
+  // 1:1s, so the chat list looks lived in.
+  const rp = chatWith('riley', 'priya');
+  post(rp, 'priya', 'message', 'you’re in SF right?? we NEED to hang now that I’m close', 'friend', at('priya', -5, 13));
+  post(rp, 'riley', 'message', 'yes!! I’ll find us something fun this weekend', 'friend', at('riley', -5, 13.5));
+  post(rp, 'priya', 'message', 'deal 🤝', 'friend', at('priya', -5, 14));
+  const rm = chatWith('riley', 'maya');
+  post(rm, 'riley', 'message', 'proud of you for that run!!', 'friend', at('riley', -8, 10));
+  post(rm, 'maya', 'message', 'thank youuu one more this week and I hit my goal 😤', 'friend', at('maya', -1, 8));
+  const rs = chatWith('riley', 'sam');
+  post(rs, 'riley', 'message', 'a LLAMA farm??', 'friend', at('riley', -3, 17));
+  post(rs, 'sam', 'message', 'his name is Gerald 🦙', 'friend', at('sam', -3, 17.25));
 
   // --- Free time for the next 7 days (Calendar free/busy) ---
   for (const f of FRIENDS) {
@@ -264,7 +302,6 @@ export function seedDemo(ctx: Ctx) {
       });
     }
   }
-  void DAY;
 }
 
 const RESETTABLE = [

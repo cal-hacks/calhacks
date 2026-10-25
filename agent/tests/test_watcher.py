@@ -224,6 +224,22 @@ async def test_posts_go_to_every_chat_the_friend_is_in():
     assert [a["groupId"] for _, a in db.calls] == [3]
 
 
+async def test_goal_that_arrives_already_done_is_not_news():
+    db, w = setup(reply=None)
+    await w.tick(no_updates)
+    # An app syncs a goal it had already reached before connecting.
+    db.tables["goal"].append({"id": 4, "friend_id": 1, "description": "Study at the library", "status": "done"})
+    await w.tick(no_updates)
+    assert db.calls == []
+    # A new goal that's reached later still is.
+    db.tables["goal"].append({"id": 5, "friend_id": 1, "description": "Call a friend", "status": "active"})
+    await w.tick(no_updates)
+    db.tables["goal"][-1]["status"] = "done"
+    await w.tick(no_updates)
+    (_, args), = db.calls
+    assert args["kind"] == "goal_hit" and "Call a friend" in args["text"]
+
+
 async def test_goal_win_is_posted_even_if_claude_would_skip_it():
     db, w = setup(reply={"share": False, "text": "Sam finished Read 2 books 📚 Who's next?"})
     await w.tick(no_updates)

@@ -9,7 +9,7 @@ import { seedDB } from "./seed";
 
 const STORAGE_KEY = "orbit.db";
 // Bumped when the seed changes so old installs pick up the new one.
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

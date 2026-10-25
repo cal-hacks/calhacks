@@ -41,15 +41,19 @@ beforeEach(() => {
 
 describe('seed', () => {
   test('creates the demo world', () => {
-    // Four in the group plus two others to find.
+    // Five in the group plus Alex, who has asked to be Riley's friend.
     expect(rows('friend')).toHaveLength(6);
-    // The group's four members, plus two per 1:1 chat between them.
-    expect(rows('membership')).toHaveLength(4 + 6 * 2);
-    expect(rows('friendship').filter(f => f.status === 'accepted')).toHaveLength(6);
+    // The group's five members, plus two per 1:1 chat between them.
+    expect(rows('membership')).toHaveLength(5 + 10 * 2);
+    expect(rows('friendship').filter(f => f.status === 'accepted')).toHaveLength(10);
+    expect(rows('friendship').filter(f => f.status === 'pending')).toMatchObject([{ toId: friendId('Riley') }]);
     expect(rows('consent')).toHaveLength(30);
+    // Last week's plan, already confirmed.
+    expect(rows('plan')).toMatchObject([{ status: 'confirmed' }]);
     expect(rows('feedItem').length).toBeGreaterThan(5);
     expect(rows('freeBlock').length).toBeGreaterThan(5);
-    expect(rows('stat').length).toBeGreaterThan(40);
+    // No Health: only Screen Time and Canvas.
+    expect(rows('stat')).toHaveLength(4);
   });
 
   test('refuses to seed twice, works again after reset', () => {
@@ -144,10 +148,11 @@ describe('group chat', () => {
     const msg = rows('feedItem').at(-1);
     expect(rows('feedItem')).toHaveLength(before + 1);
     expect(msg).toMatchObject({ kind: 'message', createdBy: 'friend', friendId: friendId('Maya') });
+    const on = () => rows('reaction').filter(r => r.feedItemId === msg.id);
     run(sam, ctx => mod.toggleReaction(ctx, { feedItemId: msg.id, emoji: '🙌' }));
-    expect(rows('reaction')).toHaveLength(1);
+    expect(on()).toHaveLength(1);
     run(sam, ctx => mod.toggleReaction(ctx, { feedItemId: msg.id, emoji: '🙌' }));
-    expect(rows('reaction')).toHaveLength(0);
+    expect(on()).toHaveLength(0);
   });
 
   test('one agent highlight per friend per chat per local day; goal wins always get through', () => {
@@ -206,7 +211,7 @@ describe('plans', () => {
         { label: 'Sat brunch call', detail: 'Everyone’s free 11am ET' },
       ]),
     }));
-    const plan = rows('plan')[0];
+    const plan = rows('plan').at(-1);
     const options = rows('planOption').filter(o => o.planId === plan.id);
     return { plan, options };
   };
@@ -220,14 +225,14 @@ describe('plans', () => {
     const { plan, options } = propose();
     run(maya, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }));
     run(maya, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[1].id, friendId: 0n }));
-    expect(rows('planVote')).toHaveLength(1);
+    expect(rows('planVote').filter(v => v.planId === plan.id)).toHaveLength(1);
     run(sam, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }));
-    expect(rows('plan')[0].status).toBe('open');
-    // Agent relays Jordan's vote from ASI:One. 2 of 4 isn't a majority yet.
+    expect(rows('plan').at(-1).status).toBe('open');
+    // Agent relays Jordan's vote from ASI:One. 2 of 5 isn't a majority yet.
     run(agent, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: fid('Jordan') }));
-    expect(rows('plan')[0].status).toBe('open');
+    expect(rows('plan').at(-1).status).toBe('open');
     run(riley, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }));
-    expect(rows('plan')[0]).toMatchObject({ status: 'confirmed', confirmedOptionId: options[0].id });
+    expect(rows('plan').at(-1)).toMatchObject({ status: 'confirmed', confirmedOptionId: options[0].id });
     expect(() => run(maya, ctx => mod.votePlan(ctx, { planId: plan.id, optionId: options[0].id, friendId: 0n }))).toThrow(/confirmed/);
   });
 
@@ -355,5 +360,28 @@ describe('friends and chats', () => {
     run(nina, ctx => mod.sendFriendRequest(ctx, { toId: omarId }));
     run(omar, ctx => mod.removeFriend(ctx, { friendId: ninaId }));
     expect(mod.myFriendships(h.viewContext(nina) as any, {} as any)).toEqual([]);
+  });
+});
+
+describe('cast greetings', () => {
+  const nina = auth('nina');
+  test('an unclaimed cast member says hi when added, or when their request is accepted', () => {
+    run(nina, ctx => mod.register(ctx, { username: 'nina', name: 'Nina', city: '', timezone: 'UTC', avatar: '' }));
+    const ninaId = rows('friend').find(f => f.username === 'nina').id;
+    const jordanId = friendId('Jordan');
+    // Jordan is claimed in these tests, so no auto-accept and no greeting.
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: jordanId }));
+    expect((mod.myFeed(h.viewContext(nina) as any, {} as any) as any[])).toHaveLength(0);
+    // Alex is unclaimed: accepts at once and says hi.
+    const alexId = rows('friend').find(f => f.username === 'alexr').id;
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: alexId }));
+    const feed = mod.myFeed(h.viewContext(nina) as any, {} as any) as any[];
+    expect(feed).toMatchObject([{ friendId: alexId, kind: 'message', createdBy: 'friend' }]);
+    expect(feed[0].text).toMatch(/climbing/);
+    // Riley accepts Alex's seeded request: Alex says hi to Riley too.
+    run(riley, ctx => mod.acceptFriendRequest(ctx, { fromId: alexId }));
+    const rileyFeed = mod.myFeed(h.viewContext(riley) as any, {} as any) as any[];
+    expect(rileyFeed.some(f => f.friendId === alexId && /climbing/.test(f.text))).toBe(true);
+    void ninaId;
   });
 });
