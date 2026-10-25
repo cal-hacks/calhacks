@@ -5,6 +5,7 @@
 // service should use real time-zone math; this is only for seed rows.
 
 import { Timestamp } from 'spacetimedb';
+import { befriend } from './friends';
 import { createDefaults, type Ctx } from './schema';
 
 const HOUR = 3600 * 1000;
@@ -15,6 +16,7 @@ const DAY = 24 * HOUR;
 const FRIENDS = [
   {
     key: 'riley',
+    username: 'demo',
     name: 'Riley Demo',
     city: 'Palo Alto, CA',
     timezone: 'America/Los_Angeles',
@@ -25,6 +27,7 @@ const FRIENDS = [
   },
   {
     key: 'maya',
+    username: 'maya_runs',
     name: 'Maya Chen',
     city: 'Austin, TX',
     timezone: 'America/Chicago',
@@ -35,6 +38,7 @@ const FRIENDS = [
   },
   {
     key: 'sam',
+    username: 'sam_l',
     name: 'Sam Lee',
     city: 'Seattle, WA',
     timezone: 'America/Los_Angeles',
@@ -45,6 +49,7 @@ const FRIENDS = [
   },
   {
     key: 'jordan',
+    username: 'jordanp',
     name: 'Jordan Park',
     city: 'New York, NY',
     timezone: 'America/New_York',
@@ -57,8 +62,14 @@ const FRIENDS = [
 
 type Key = (typeof FRIENDS)[number]['key'];
 
+// People on the platform who aren't in the demo group: someone new can find
+// and add them. Nobody claims them, so they accept requests right away.
+const OTHERS = [
+  { username: 'priya.k', name: 'Priya Kumar', city: 'Chicago, IL', timezone: 'America/Chicago', avatar: '🩺' },
+  { username: 'alexr', name: 'Alex Rivera', city: 'Boston, MA', timezone: 'America/New_York', avatar: '🧗' },
+];
+
 export const DEMO_CODES = {
-  group: 'CATCHUP',
   riley: 'RILEY-1',
   maya: 'MAYA-1',
   sam: 'SAM-1',
@@ -88,8 +99,7 @@ function localDate(nowMs: number, offset: number, daysFromToday: number): string
 
 export function seedDemo(ctx: Ctx) {
   const now = ctx.timestamp.toDate().getTime();
-  const group = ctx.db.friendGroup.insert({ id: 0n, name: 'Class of ’25 🎓' });
-  ctx.db.invite.insert({ code: DEMO_CODES.group, kind: 'group', targetId: group.id });
+  const group = ctx.db.friendGroup.insert({ id: 0n, name: 'Class of ’25 🎓', isDirect: false });
 
   const ids = {} as Record<Key, bigint>;
   for (const f of FRIENDS) {
@@ -100,6 +110,7 @@ export function seedDemo(ctx: Ctx) {
       city: f.city,
       timezone: f.timezone,
       avatar: f.avatar,
+      username: f.username,
     });
     ids[f.key] = row.id;
     ctx.db.membership.insert({ id: 0n, groupId: group.id, friendId: row.id });
@@ -117,6 +128,12 @@ export function seedDemo(ctx: Ctx) {
       trustedFriendIds: f.settings.trusted.map(k => ids[k as Key]),
       nudgePreview: f.settings.nudgePreview,
     });
+  }
+  // The group are all friends with each other, each pair with a 1:1 chat.
+  FRIENDS.forEach((a, i) => FRIENDS.slice(i + 1).forEach(b => befriend(ctx, ids[a.key], ids[b.key])));
+  for (const o of OTHERS) {
+    const row = ctx.db.friend.insert({ id: 0n, identity: undefined, ...o });
+    createDefaults(ctx, row.id);
   }
 
   const offsetOf = (k: Key) => FRIENDS.find(f => f.key === k)!.offset;
@@ -252,6 +269,7 @@ export function seedDemo(ctx: Ctx) {
 
 const RESETTABLE = [
   'friend',
+  'friendship',
   'friendGroup',
   'membership',
   'invite',

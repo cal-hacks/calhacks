@@ -105,7 +105,7 @@ export default function TabsLayout() {
         tabBarBadgeStyle: { backgroundColor: c.surface, color: c.text, borderWidth: 2, borderColor: c.border, fontFamily: FONT, fontSize: 12, lineHeight: 15 },
       }}
     >
-      <Tabs.Screen name="group" options={{ title: "Group", tabBarIcon: icon("group") }} />
+      <Tabs.Screen name="group" options={{ title: "Chats", tabBarIcon: icon("group") }} />
       <Tabs.Screen name="index" options={{ title: "Dashboard", tabBarIcon: icon("index") }} />
       <Tabs.Screen name="goals" options={{ title: "Goals", tabBarIcon: icon("goals") }} />
       <Tabs.Screen name="agent" options={{ title: "Agent", tabBarIcon: icon("agent") }} />

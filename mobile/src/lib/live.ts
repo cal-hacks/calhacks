@@ -12,6 +12,7 @@ import type {
   Friend,
   FriendGroup,
   FriendSettings,
+  Friendship,
   Goal as LiveGoal,
   Membership,
   Plan,
@@ -19,21 +20,23 @@ import type {
   PlanVote,
   Reaction,
 } from "../module_bindings/types";
-import type { Goal, GoalLog, Permissions, SharingPrefs, User } from "./types";
+import type { Connection, Goal, GoalLog, Permissions, SharingPrefs, User } from "./types";
+import { mutate } from "./db";
 import { currentProgress } from "./goals";
 import { randomSalt, sha256 } from "./hash";
 import { devHost } from "./devHost";
 
-// The shared, live side of Orbit: the group chat, agent posts, plans and
-// whatever each friend chose to share. It runs on the SpacetimeDB module in
-// server/. Accounts, the friend list and goal history stay in db.ts; the
-// sync* functions push the parts other people (and their agents) should see.
+// The shared, live side of Orbit: who's signed up, friendships, chats (1:1 and
+// groups), agent posts, plans and whatever each friend chose to share. It runs
+// on the SpacetimeDB module in server/. Accounts and goal history stay in
+// db.ts; the sync* functions push the parts other people (and their agents)
+// should see. Other people and friendships are mirrored into db.ts as users
+// with a remoteId and connections, so the Friends screens read them as before.
 
 // Default: SpacetimeDB on the Mac running Expo's dev server, as this device
 // can reach it (see devHost.ts).
 const URI = process.env.EXPO_PUBLIC_SPACETIMEDB_URI || `ws://${devHost()}:3000`;
 const DB_NAME = process.env.EXPO_PUBLIC_SPACETIMEDB_DB || "calhacks";
-const GROUP_INVITE = "CATCHUP";
 
 /** Seeded Orbit people and the claim codes of their seeded group members. */
 const CLAIM_CODES: Record<string, string> = {
@@ -49,10 +52,18 @@ export interface LiveState {
   status: LiveStatus;
   error?: string;
   me?: Friend;
+  /** Every chat I'm in: 1:1s with friends and groups. */
+  groups: FriendGroup[];
+  /** The open chat, if any; `feed` and `plans` are this chat's. */
   group?: FriendGroup;
+  /** Everyone signed up (public profiles). */
   friends: Friend[];
+  friendships: Friendship[];
+  /** Memberships of every chat I'm in. */
   members: Membership[];
   feed: FeedItem[];
+  /** Items in all my chats, for chat-list previews. */
+  allFeed: FeedItem[];
   reactions: Reaction[];
   plans: Plan[];
   options: PlanOption[];
@@ -65,9 +76,12 @@ export interface LiveState {
 
 const EMPTY: LiveState = {
   status: "offline",
+  groups: [],
   friends: [],
+  friendships: [],
   members: [],
   feed: [],
+  allFeed: [],
   reactions: [],
   plans: [],
   options: [],
@@ -80,6 +94,7 @@ const EMPTY: LiveState = {
 let state: LiveState = EMPTY;
 let conn: DbConnection | null = null;
 let connectedUserId: string | null = null;
+let openGroupId: bigint | null = null;
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<LiveState>) {
@@ -100,16 +115,23 @@ function queueRefresh() {
     if (!conn) return;
     const db = conn.db;
     const me = [...db.myFriend.iter()][0];
-    const members = [...db.membership.iter()];
-    const myGroupId = me ? members.find((m) => m.friendId === me.id)?.groupId : undefined;
+    const groups = [...db.myGroups.iter()];
+    const groupIds = new Set(groups.map((g) => g.id));
+    const allFeed = [...db.myFeed.iter()].sort(byCreated);
+    const friends = [...db.friend.iter()];
+    const friendships = [...db.myFriendships.iter()];
+    mirror(me, friends, friendships);
     set({
       me,
-      group: [...db.friendGroup.iter()].find((g) => g.id === myGroupId),
-      friends: [...db.friend.iter()],
-      members,
-      feed: [...db.feedItem.iter()].filter((f) => f.groupId === myGroupId).sort(byCreated),
+      groups,
+      group: groups.find((g) => g.id === openGroupId),
+      friends,
+      friendships,
+      members: [...db.myMemberships.iter()],
+      feed: allFeed.filter((f) => f.groupId === openGroupId),
+      allFeed,
       reactions: [...db.reaction.iter()],
-      plans: [...db.plan.iter()].filter((p) => p.groupId === myGroupId).sort(byCreated),
+      plans: [...db.plan.iter()].filter((p) => groupIds.has(p.groupId)).sort(byCreated),
       options: [...db.planOption.iter()],
       votes: [...db.planVote.iter()],
       goals: [...db.goal.iter()],
@@ -162,7 +184,7 @@ function build(user: User, token: string | undefined) {
     .onConnect((c, _identity, token) => {
       saveToken(user.id, token);
       for (const table of [
-        c.db.friend, c.db.friendGroup, c.db.membership, c.db.feedItem, c.db.reaction, c.db.plan,
+        c.db.friend, c.db.myFriendships, c.db.myGroups, c.db.myMemberships, c.db.myFeed, c.db.reaction, c.db.plan,
         c.db.planOption, c.db.planVote, c.db.goal, c.db.checkin, c.db.myFriend, c.db.myConsent, c.db.mySettings,
       ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?(cb: () => void): void }[]) {
         table.onInsert(queueRefresh);
@@ -176,18 +198,18 @@ function build(user: User, token: string | undefined) {
           queueRefresh();
           void ensureMember(c, user);
         })
-        .onError(() => set({ status: "error", error: "Couldn't load the group." }))
+        .onError(() => set({ status: "error", error: "Couldn't load your chats." }))
         .subscribe([
-          "SELECT * FROM friend", "SELECT * FROM friend_group", "SELECT * FROM membership",
-          "SELECT * FROM feed_item", "SELECT * FROM reaction", "SELECT * FROM plan",
+          "SELECT * FROM friend", "SELECT * FROM my_friendships", "SELECT * FROM my_groups",
+          "SELECT * FROM my_memberships", "SELECT * FROM my_feed", "SELECT * FROM reaction", "SELECT * FROM plan",
           "SELECT * FROM plan_option", "SELECT * FROM plan_vote", "SELECT * FROM goal",
           "SELECT * FROM checkin", "SELECT * FROM my_friend", "SELECT * FROM my_consent",
           "SELECT * FROM my_settings",
         ]);
     })
-    .onConnectError((_ctx, e) => set({ status: "error", error: `Can't reach the group server (${message(e)}).` }))
+    .onConnectError((_ctx, e) => set({ status: "error", error: `Can't reach the server (${message(e)}).` }))
     .onDisconnect(() => {
-      if (conn) set({ status: "error", error: "Lost connection to the group server." });
+      if (conn) set({ status: "error", error: "Lost connection to the server." });
     })
     .build();
 }
@@ -196,13 +218,17 @@ export function disconnect() {
   const old = conn;
   conn = null;
   connectedUserId = null;
+  openGroupId = null;
   old?.disconnect();
   set(EMPTY);
 }
 
-/** Seeded people claim their group member; everyone else joins as a new one. */
+/** Seeded people claim their friend row; everyone else signs up as a new one. */
 async function ensureMember(c: DbConnection, user: User) {
-  if ([...c.db.myFriend.iter()].length > 0) {
+  const existing = [...c.db.myFriend.iter()][0];
+  if (existing) {
+    // Joined before usernames existed: take this account's username so friends can find it.
+    if (!existing.username) await c.reducers.setUsername({ username: user.username }).catch(warn("username"));
     set({ status: "ready" });
     return;
   }
@@ -212,8 +238,8 @@ async function ensureMember(c: DbConnection, user: User) {
     if (code) {
       await c.reducers.claimFriend({ claimCode: code });
     } else {
-      await c.reducers.joinGroup({
-        inviteCode: GROUP_INVITE,
+      await c.reducers.register({
+        username: user.username,
         name: user.displayName,
         city: user.city,
         timezone: user.timezone,
@@ -222,8 +248,64 @@ async function ensureMember(c: DbConnection, user: User) {
     }
     set({ status: "ready" });
   } catch (e) {
-    set({ status: "error", error: `Couldn't join the group: ${message(e)}` });
+    set({ status: "error", error: `Couldn't sign you up: ${message(e)}` });
   }
+}
+
+// ---------- people and friendships, mirrored into db.ts ----------
+
+const AVATAR_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#6250d6", "#e87ba4", "#008300", "#e34948", "#eda100"];
+
+export const remoteUserId = (friendId: bigint) => `f_${friendId}`;
+
+/** The live friend id behind a mirrored user id (`f_12`), if it is one. */
+export function liveFriendId(userId: string): bigint | undefined {
+  return /^f_\d+$/.test(userId) ? BigInt(userId.slice(2)) : undefined;
+}
+
+function remoteUser(f: Friend): User {
+  let h = 0;
+  for (const ch of f.username) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return {
+    id: remoteUserId(f.id),
+    remoteId: String(f.id),
+    username: f.username,
+    authProvider: "password",
+    displayName: f.name,
+    bio: "",
+    city: f.city,
+    timezone: f.timezone,
+    avatar: { emoji: f.avatar || "🙂", color: AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length] },
+    profileVisibility: { city: true, bio: false, goals: true },
+    onboarded: true,
+    createdAt: 0,
+  };
+}
+
+let mirrored = "";
+
+/** Other signed-up people become users, and my friendships become connections. */
+function mirror(me: Friend | undefined, friends: Friend[], friendships: Friendship[]) {
+  const localId = connectedUserId;
+  if (!me || !localId) return;
+  const toLocal = (id: bigint) => (id === me.id ? localId : remoteUserId(id));
+  const users = friends.filter((f) => f.id !== me.id && f.username).map(remoteUser);
+  const connections: Connection[] = friendships.map((f) => ({
+    id: `fs_${f.id}`,
+    fromId: toLocal(f.fromId),
+    toId: toLocal(f.toId),
+    status: f.status === "accepted" ? "accepted" : "pending",
+    createdAt: f.createdAt.toDate().getTime(),
+  }));
+  // Skip the write (and the save) when nothing changed.
+  const key = JSON.stringify([localId, users, connections]);
+  if (key === mirrored) return;
+  mirrored = key;
+  mutate((db) => ({
+    ...db,
+    users: [...db.users.filter((u) => !u.remoteId), ...users],
+    connections: [...db.connections.filter((c) => c.fromId !== localId && c.toId !== localId), ...connections],
+  }));
 }
 
 function live(): DbConnection | null {
@@ -232,9 +314,80 @@ function live(): DbConnection | null {
 
 // ---------- actions (the group page calls these directly) ----------
 
+/** Open a chat (or go back to the list with null). */
+export function openChat(groupId: bigint | null) {
+  openGroupId = groupId;
+  queueRefresh();
+}
+
+/** The 1:1 chat with a friend, by their live friend id. */
+export function directChatWith(friendId: bigint): FriendGroup | undefined {
+  const dmIds = new Set(state.groups.filter((g) => g.isDirect).map((g) => g.id));
+  const m = state.members.find((x) => x.friendId === friendId && dmIds.has(x.groupId));
+  return m && state.groups.find((g) => g.id === m.groupId);
+}
+
+/** Members of one of my chats, other than me. */
+export function chatMembers(s: LiveState, groupId: bigint): Friend[] {
+  const ids = new Set(s.members.filter((m) => m.groupId === groupId).map((m) => m.friendId));
+  return s.friends.filter((f) => ids.has(f.id) && f.id !== s.me?.id);
+}
+
+/** A 1:1 is named after the friend; a group by its name. */
+export function chatTitle(s: LiveState, group: FriendGroup): string {
+  if (!group.isDirect) return group.name;
+  return chatMembers(s, group.id)[0]?.name ?? "Former friend";
+}
+
+/** My accepted friends, as live friend rows. */
+export function liveFriends(s: LiveState): Friend[] {
+  const me = s.me?.id;
+  const ids = new Set(
+    s.friendships.filter((f) => f.status === "accepted").map((f) => (f.fromId === me ? f.toId : f.fromId)),
+  );
+  return s.friends.filter((f) => ids.has(f.id));
+}
+
+function requireLive(): DbConnection {
+  const c = live();
+  if (!c) throw new Error(state.error ?? "Not connected yet. Try again in a moment.");
+  return c;
+}
+
 export async function sendMessage(text: string, replyToId = 0n) {
-  if (!state.group) throw new Error("Not in a group yet.");
-  await live()?.reducers.sendMessage({ groupId: state.group.id, text, replyToId });
+  if (!state.group) throw new Error("Open a chat first.");
+  await requireLive().reducers.sendMessage({ groupId: state.group.id, text, replyToId });
+}
+
+export async function sendFriendRequest(toId: bigint) {
+  await requireLive().reducers.sendFriendRequest({ toId });
+}
+
+export async function acceptFriendRequest(fromId: bigint) {
+  await requireLive().reducers.acceptFriendRequest({ fromId });
+}
+
+/** Decline, cancel or unfriend. */
+export async function removeFriend(friendId: bigint) {
+  await requireLive().reducers.removeFriend({ friendId });
+}
+
+/** Make a group chat of friends and open it. */
+export async function createGroup(name: string, friendIds: bigint[]) {
+  const c = requireLive();
+  const before = new Set(state.groups.map((g) => g.id));
+  await c.reducers.createGroup({ name, friendIds });
+  const made = [...c.db.myGroups.iter()].find((g) => !g.isDirect && !before.has(g.id));
+  if (made) openChat(made.id);
+}
+
+export async function addGroupMember(groupId: bigint, friendId: bigint) {
+  await requireLive().reducers.addGroupMember({ groupId, friendId });
+}
+
+export async function leaveGroup(groupId: bigint) {
+  await requireLive().reducers.leaveGroup({ groupId });
+  openChat(null);
 }
 
 export async function addCheckin(text: string) {

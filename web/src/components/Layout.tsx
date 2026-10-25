@@ -9,7 +9,7 @@ import { BeeLogo } from "./ui";
 import { ChartIcon, ChatIcon, PeopleIcon, PersonIcon, ShareIcon, TargetIcon } from "./icons";
 
 const NAV = [
-  { to: "/group", label: "Group", icon: ChatIcon },
+  { to: "/group", label: "Chats", icon: ChatIcon },
   { to: "/share", label: "Share", icon: ShareIcon },
   { to: "/", label: "Dashboard", icon: ChartIcon, end: true },
   { to: "/goals", label: "Goals", icon: TargetIcon },

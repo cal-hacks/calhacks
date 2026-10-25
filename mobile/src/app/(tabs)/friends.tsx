@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert, Pressable, Share, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useDB } from "../../lib/db";
+import { useLive } from "../../lib/live";
 import {
   acceptFriendRequest,
   currentUser,
@@ -22,8 +23,14 @@ import { Avatar, Button, Card, Eyebrow, H2, Input, Pill, Row, Screen, Txt } from
 import { Steps } from "../../components/Steps";
 import { useColors } from "../../components/theme";
 
+/** Run a server call from a button; show what went wrong if it fails. */
+function act(call: () => Promise<unknown>) {
+  call().catch((e) => Alert.alert("Couldn't do that", e instanceof Error ? e.message : String(e)));
+}
+
 export default function FriendsScreen() {
   const db = useDB();
+  const live = useLive();
   const c = useColors();
   const me = currentUser(db);
   const { welcome } = useLocalSearchParams<{ welcome?: string }>();
@@ -51,8 +58,8 @@ export default function FriendsScreen() {
             const u = userById(x.fromId);
             return u ? (
               <PersonRow key={x.id} user={u} extra="wants to connect">
-                <Button small variant="ghost" title="Decline" onPress={() => removeConnection(u.id)} />
-                <Button small title="Accept" onPress={() => acceptFriendRequest(x.id)} />
+                <Button small variant="ghost" title="Decline" onPress={() => act(() => removeConnection(u.id))} />
+                <Button small title="Accept" onPress={() => act(() => acceptFriendRequest(x.id))} />
               </PersonRow>
             ) : null;
           })}
@@ -60,10 +67,18 @@ export default function FriendsScreen() {
             const u = userById(x.toId);
             return u ? (
               <PersonRow key={x.id} user={u} extra="request sent">
-                <Button small variant="ghost" title="Cancel" onPress={() => removeConnection(u.id)} />
+                <Button small variant="ghost" title="Cancel" onPress={() => act(() => removeConnection(u.id))} />
               </PersonRow>
             ) : null;
           })}
+        </Card>
+      )}
+
+      {live.status !== "ready" && (
+        <Card>
+          <Txt small muted={live.status !== "error"} style={live.status === "error" ? { color: c.warn } : undefined}>
+            {live.status === "error" ? live.error : "Connecting to find friends…"}
+          </Txt>
         </Card>
       )}
 
@@ -104,7 +119,7 @@ function RelationButton({ db, me, user }: { db: DB; me: User; user: User }) {
   const rel = relationship(db, me.id, user.id);
   if (rel === "friends") return <Pill on text="Connected" />;
   if (rel === "outgoing") return <Pill on={false} text="Requested" />;
-  return <Button small variant="secondary" title={rel === "incoming" ? "Accept" : "Add"} onPress={() => sendFriendRequest(user.id)} />;
+  return <Button small variant="secondary" title={rel === "incoming" ? "Accept" : "Add"} onPress={() => act(() => sendFriendRequest(user.id))} />;
 }
 
 function FindFriends({ db, me }: { db: DB; me: User }) {
@@ -141,7 +156,7 @@ function FindFriends({ db, me }: { db: DB; me: User }) {
   return (
     <Card>
       <H2>Find friends</H2>
-      <Input value={query} onChangeText={setQuery} placeholder="Search by name, @username or email" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" accessibilityLabel="Search people" />
+      <Input value={query} onChangeText={setQuery} placeholder="Search by name or @username" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" accessibilityLabel="Search people" />
       {query.trim().length >= 2 && (
         <View style={{ gap: 10 }}>
           {results.length === 0 && <Txt small muted>No one matches “{query}”.</Txt>}

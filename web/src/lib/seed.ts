@@ -10,8 +10,6 @@ export function defaultPermissions(userId: Id): Permissions {
     userId,
     calendars: {
       google: { connected: false },
-      outlook: { connected: false },
-      apple: { connected: false },
     },
     location: "off",
     photos: "off",

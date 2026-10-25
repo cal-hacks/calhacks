@@ -3,6 +3,7 @@ back to plain text instead of breaking the chat."""
 
 import json
 import logging
+import re
 from typing import Any
 
 import anthropic
@@ -11,6 +12,10 @@ MODEL = "claude-opus-5-5"
 # Screenshot reading and photo captions (the plan's choice: fast and cheap).
 VISION_MODEL = "claude-haiku-5-5"
 log = logging.getLogger(__name__)
+WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search"}
+# A long search turn can stop with pause_turn; resend to let the server resume.
+MAX_CONTINUATIONS = 3
+FALLBACK = dict(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
 
 
 class Llm:
@@ -51,6 +56,49 @@ class Llm:
         except json.JSONDecodeError:
             log.warning("Claude returned invalid JSON; skipping")
             return None
+
+    async def search_json(
+        self, system: str, prompt: str, *, max_searches: int = 4, effort: str = "medium"
+    ) -> dict | None:
+        """A JSON object from a turn that may search the web, or None.
+
+        Structured outputs can't be combined with web search (search results
+        come back with citations, which structured outputs reject), so the
+        prompt asks for JSON and the final text is parsed leniently.
+        """
+        if self._client is None:
+            return None
+        tools = [{**WEB_SEARCH, "max_uses": max_searches}]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+        try:
+            for _ in range(MAX_CONTINUATIONS + 1):
+                response = await self._client.beta.messages.create(
+                    model=MODEL,
+                    max_tokens=16000,
+                    # Medium: at low it often skips searching and stays generic.
+                    output_config={"effort": effort},
+                    system=system,
+                    tools=tools,
+                    messages=messages,
+                    **FALLBACK,
+                )
+                if response.stop_reason != "pause_turn":
+                    break
+                # Resend the paused turn as is; the server picks up where it stopped.
+                messages = [messages[0], {"role": "assistant", "content": response.content}]
+            else:
+                log.warning("Claude web search kept pausing; skipping")
+                return None
+        except anthropic.APIStatusError as e:
+            log.warning("Claude error %s: %s", e.status_code, e.message)
+            return None
+        except anthropic.APIConnectionError:
+            log.warning("Can't reach Claude; using plain text")
+            return None
+        if response.stop_reason == "refusal":
+            return None
+        log.info("Claude replied after %d server tool calls", sum(b.type == "server_tool_use" for b in response.content))
+        return parse_json_text(final_text(response.content))
 
     async def _create(
         self,
@@ -97,3 +145,25 @@ class Llm:
             return None
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         return text or None
+
+
+def final_text(content: list[Any]) -> str:
+    """Text after the last tool block: the answer, not the "let me search" preamble."""
+    last_tool = max((i for i, b in enumerate(content) if b.type != "text"), default=-1)
+    tail = "".join(b.text for b in content[last_tool + 1:] if b.type == "text")
+    return tail.strip() or "".join(b.text for b in content if b.type == "text").strip()
+
+
+def parse_json_text(text: str) -> dict | None:
+    """The JSON object in a reply, tolerating code fences or a sentence around it."""
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        log.warning("Claude reply had no JSON object; skipping")
+        return None
+    try:
+        value = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        log.warning("Claude returned invalid JSON; skipping")
+        return None
+    return value if isinstance(value, dict) else None

@@ -13,7 +13,7 @@ import asyncio
 import logging
 import re
 import socket
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -31,10 +31,9 @@ from .coordinator import answer
 from .group import Friend, FriendUpdate, first_group_id, friend_update, group_friends
 from .llm import Llm
 from .stdb import StdbClient
-from .watcher import Watcher
+from .watcher import LOOKBACK, Watcher
 
 log = logging.getLogger(__name__)
-LOOKBACK = timedelta(days=7)
 README = Path(__file__).resolve().parents[1] / "AGENTS.md"
 
 

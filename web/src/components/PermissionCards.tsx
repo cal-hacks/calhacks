@@ -7,8 +7,11 @@ import { connectCalendar, requestLocation } from "../lib/integrations";
 import type { CalendarProvider, ScreenTimeMethod } from "../lib/types";
 import { Segmented } from "./Toggle";
 
-/** Calendar, location, photo and screen time access. Used in onboarding and Settings. */
-export function PermissionCards() {
+type Section = "calendar" | "location" | "photos" | "screenTime";
+
+/** Calendar, location, photo and screen time access, or just the `only` ones. */
+export function PermissionCards({ only }: { only?: Section[] } = {}) {
+  const show = (s: Section) => !only || only.includes(s);
   const db = useDB();
   const me = currentUser(db)!;
   const perms = permissionsOf(db, me.id);
@@ -16,7 +19,7 @@ export function PermissionCards() {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  // Return leg of an agent-service OAuth redirect: ?connected=outlook&account=...
+  // Return leg of the agent service's Google sign-in: ?connected=google&account=...
   useEffect(() => {
     const provider = params.get("connected") as CalendarProvider | null;
     if (provider && CALENDAR_PROVIDERS.some((p) => p.key === provider)) {
@@ -31,7 +34,7 @@ export function PermissionCards() {
   const onConnect = async (provider: CalendarProvider) => {
     setBusy(provider);
     try {
-      const r = await connectCalendar(provider, me.id, me.email);
+      const r = await connectCalendar(me.email);
       if (r.status === "connected") setCalendar(provider, true, r.account);
     } catch (e) {
       setNote(e instanceof Error ? e.message : String(e));
@@ -52,6 +55,7 @@ export function PermissionCards() {
 
   return (
     <div className="perm-grid">
+      {show("calendar") && (
       <section className="card perm-card">
         <header className="perm-head">
           <span className="perm-icon" aria-hidden>🗓️</span>
@@ -85,7 +89,9 @@ export function PermissionCards() {
           })}
         </ul>
       </section>
+      )}
 
+      {show("location") && (
       <section className="card perm-card">
         <header className="perm-head">
           <span className="perm-icon" aria-hidden>📍</span>
@@ -106,7 +112,9 @@ export function PermissionCards() {
         </div>
         {note && <p className="form-error small">{note}</p>}
       </section>
+      )}
 
+      {show("photos") && (
       <section className="card perm-card">
         <header className="perm-head">
           <span className="perm-icon" aria-hidden>📸</span>
@@ -128,7 +136,9 @@ export function PermissionCards() {
           />
         </div>
       </section>
+      )}
 
+      {show("screenTime") && (
       <section className="card perm-card">
         <header className="perm-head">
           <span className="perm-icon" aria-hidden>📱</span>
@@ -156,6 +166,7 @@ export function PermissionCards() {
           </p>
         )}
       </section>
+      )}
     </div>
   );
 }

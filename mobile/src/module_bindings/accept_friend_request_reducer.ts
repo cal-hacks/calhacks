@@ -11,9 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  inviteCode: __t.string(),
-  name: __t.string(),
-  city: __t.string(),
-  timezone: __t.string(),
-  avatar: __t.string(),
+  fromId: __t.u64(),
 };

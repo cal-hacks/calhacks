@@ -5,7 +5,6 @@ import { today } from "./dates";
 import * as live from "./live";
 import type {
   CalendarProvider,
-  Connection,
   DB,
   Goal,
   GoalLog,
@@ -53,17 +52,6 @@ function newUser(p: Pick<User, "username" | "displayName" | "authProvider"> & Pa
   };
 }
 
-/** New accounts get a couple of friend requests so the Friends page isn't empty. */
-function welcomeRequests(userId: Id): Connection[] {
-  return ["u_jordan", "u_maya"].map((fromId) => ({
-    id: newId("c"),
-    fromId,
-    toId: userId,
-    status: "pending",
-    createdAt: Date.now(),
-  }));
-}
-
 const USERNAME_RE = /^[a-z0-9._]{3,24}$/;
 
 // ---------- auth ----------
@@ -86,7 +74,6 @@ export function signUp(input: { username: string; password: string; displayName:
     ...db,
     users: [...db.users, user],
     permissions: [...db.permissions, defaultPermissions(user.id)],
-    connections: [...db.connections, ...welcomeRequests(user.id)],
     session: { userId: user.id },
   }));
   return user;
@@ -95,7 +82,7 @@ export function signUp(input: { username: string; password: string; displayName:
 export function logIn(usernameRaw: string, password: string): User {
   const username = usernameRaw.trim().toLowerCase();
   // Seeded people with a password are the demo phones (maya_runs, jordanp, sam_l).
-  const user = getDB().users.find((u) => u.username === username && (!u.isSeed || u.passwordHash));
+  const user = getDB().users.find((u) => u.username === username && !u.remoteId && (!u.isSeed || u.passwordHash));
   if (!user || !user.salt || user.passwordHash !== hashPassword(password, user.salt)) {
     throw new ApiError(user?.authProvider === "google" ? "This account uses Google sign-in." : "Wrong username or password.");
   }
@@ -133,7 +120,6 @@ export function signInWithGoogle(profile: GoogleProfile): { user: User; isNew: b
     ...d,
     users: [...d.users, user],
     permissions: [...d.permissions, perms],
-    connections: [...d.connections, ...welcomeRequests(user.id)],
     session: { userId: user.id },
   }));
   return { user, isNew: true };
@@ -227,46 +213,32 @@ export function setCalendar(provider: CalendarProvider, connected: boolean, acco
 
 // ---------- connections ----------
 
-export function sendFriendRequest(toId: Id) {
-  const me = requireUser();
-  const db = getDB();
-  if (toId === me.id) return;
-  const existing = db.connections.find(
-    (c) => (c.fromId === me.id && c.toId === toId) || (c.fromId === toId && c.toId === me.id),
-  );
-  if (existing) {
-    // They already asked us: sending back is the same as accepting.
-    if (existing.status === "pending" && existing.toId === me.id) acceptFriendRequest(existing.id);
-    return;
-  }
-  const conn: Connection = { id: newId("c"), fromId: me.id, toId, status: "pending", createdAt: Date.now() };
-  mutate((d) => ({ ...d, connections: [...d.connections, conn] }));
+// Friends live on the server (live.ts); its mirror keeps db.users and
+// db.connections in step, so these just make the calls.
 
-  // Demo: seeded people accept after a moment, like a friend tapping "accept".
-  if (db.users.find((u) => u.id === toId)?.isSeed) {
-    setTimeout(() => {
-      mutate((d) => ({
-        ...d,
-        connections: d.connections.map((c) => (c.id === conn.id ? { ...c, status: "accepted" } : c)),
-      }));
-    }, 2500);
-  }
+function liveId(userId: Id): bigint {
+  const id = live.liveFriendId(userId);
+  if (id === undefined) throw new ApiError("That person isn't on the server.");
+  return id;
 }
 
-export function acceptFriendRequest(connectionId: Id) {
-  mutate((db) => ({
-    ...db,
-    connections: db.connections.map((c) => (c.id === connectionId ? { ...c, status: "accepted" } : c)),
-  }));
+export async function sendFriendRequest(toId: Id) {
+  await live.sendFriendRequest(liveId(toId));
 }
 
-export function removeConnection(friendId: Id) {
+export async function acceptFriendRequest(connectionId: Id) {
   const me = requireUser().id;
+  const conn = getDB().connections.find((c) => c.id === connectionId);
+  if (!conn || conn.toId !== me) throw new ApiError("That request is gone.");
+  await live.acceptFriendRequest(liveId(conn.fromId));
+}
+
+/** Decline, cancel or unfriend. */
+export async function removeConnection(friendId: Id) {
+  const me = requireUser().id;
+  await live.removeFriend(liveId(friendId));
   mutate((db) => ({
     ...db,
-    connections: db.connections.filter(
-      (c) => !((c.fromId === me && c.toId === friendId) || (c.fromId === friendId && c.toId === me)),
-    ),
     sharing: db.sharing.filter(
       (s) => !((s.ownerId === me && s.friendId === friendId) || (s.ownerId === friendId && s.friendId === me)),
     ),
@@ -305,8 +277,9 @@ function normPhone(p?: string) {
 
 /** Match imported contacts against people on the platform. */
 export function matchContacts(contacts: ContactEntry[]): { contact: ContactEntry; user?: User }[] {
-  const me = requireUser();
-  const others = getDB().users.filter((u) => u.id !== me.id);
+  // Only people on the server can be added. They share no email or phone,
+  // so this matches nothing until the server keeps (hashed) contact details.
+  const others = getDB().users.filter((u) => u.remoteId);
   return contacts.map((contact) => {
     const email = contact.email?.trim().toLowerCase();
     const phone = normPhone(contact.phone);
@@ -317,13 +290,13 @@ export function matchContacts(contacts: ContactEntry[]): { contact: ContactEntry
   });
 }
 
+/** Search everyone signed up on the server by username or name. */
 export function searchUsers(query: string): User[] {
-  const me = requireUser();
   const q = query.trim().toLowerCase().replace(/^@/, "");
   if (q.length < 2) return [];
   return getDB()
-    .users.filter((u) => u.id !== me.id)
-    .filter((u) => u.username.includes(q) || u.displayName.toLowerCase().includes(q) || u.email?.toLowerCase() === q)
+    .users.filter((u) => u.remoteId)
+    .filter((u) => u.username.includes(q) || u.displayName.toLowerCase().includes(q))
     .slice(0, 8);
 }
 

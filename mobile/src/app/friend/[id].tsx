@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useDB } from "../../lib/db";
+import { directChatWith, liveFriendId, openChat, useLive } from "../../lib/live";
 import { currentUser, friendsOf, removeConnection, setSharing, setSharingForAll, sharingWith } from "../../lib/api";
 import { FREQUENCIES, SHARE_CATEGORIES } from "../../lib/meta";
 import { Avatar, Button, Chip, Chips, H2, Row, Screen, ToggleList, ToggleRow, Txt } from "../../components/ui";
@@ -10,12 +11,20 @@ import { Avatar, Button, Chip, Chips, H2, Row, Screen, ToggleList, ToggleRow, Tx
 export default function FriendScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const db = useDB();
+  useLive(); // re-render when the 1:1 chat appears
   const me = currentUser(db);
   const [applied, setApplied] = useState(false);
   const friend = me ? friendsOf(db, me.id).find((f) => f.id === id) : undefined;
   if (!me || !friend) return null;
 
   const first = friend.displayName.split(" ")[0];
+  const liveId = liveFriendId(friend.id);
+  const chat = liveId === undefined ? undefined : directChatWith(liveId);
+  const onMessage = () => {
+    if (!chat) return;
+    openChat(chat.id);
+    router.navigate("/group");
+  };
   const prefs = sharingWith(db, me.id, friend.id);
   const paused = prefs.frequency === "paused";
   const freq = FREQUENCIES.find((f) => f.key === prefs.frequency)!;
@@ -29,7 +38,7 @@ export default function FriendScreen() {
         style: "destructive",
         onPress: () => {
           router.back();
-          removeConnection(friend.id);
+          removeConnection(friend.id).catch((e) => Alert.alert("Couldn't remove them", e instanceof Error ? e.message : String(e)));
         },
       },
     ]);
@@ -49,6 +58,7 @@ export default function FriendScreen() {
             {friend.bio && friend.profileVisibility.bio ? <Txt small>{friend.bio}</Txt> : null}
           </View>
         </Row>
+        <Button title={`💬 Message ${first}`} onPress={onMessage} disabled={!chat} />
 
         <View style={{ gap: 8 }}>
           <Txt bold>How often should your agent send {first} updates?</Txt>

@@ -11,7 +11,7 @@ import { schema, table, t, type InferSchema, type ReducerCtx } from 'spacetimedb
 
 const id = () => t.u64().primaryKey().autoInc();
 
-// --- People and groups (public) ---
+// --- People (public, so friends can find each other by username) ---
 
 export const friend = table(
   { public: true },
@@ -25,20 +25,40 @@ export const friend = table(
     city: t.string(),
     timezone: t.string(), // IANA, e.g. "America/New_York"
     avatar: t.string(),
+    // Lowercase handle for search; unique among non-empty ones (checked in
+    // reducers). Empty for people who joined before usernames existed.
+    username: t.string().default(''),
   }
 );
 
+// --- Friendships and chats (private: members read theirs through views) ---
+
+// A friend request from `fromId` to `toId`; accepted makes them friends.
+// At most one row per pair, in either direction.
+export const friendship = table(
+  {},
+  {
+    id: id(),
+    fromId: t.u64().index('btree'),
+    toId: t.u64().index('btree'),
+    status: t.string(), // pending | accepted
+    createdAt: t.timestamp(),
+  }
+);
+
+// A chat: a 1:1 between two friends (isDirect) or a group made of friends.
 // Not `group`: GROUP is a reserved SQL word.
 export const friendGroup = table(
-  { public: true },
+  {},
   {
     id: id(),
     name: t.string(),
+    isDirect: t.bool().default(false),
   }
 );
 
 export const membership = table(
-  { public: true },
+  {},
   {
     id: id(),
     groupId: t.u64().index('btree'),
@@ -184,9 +204,10 @@ export const checkin = table(
   }
 );
 
-// The group chat: friends' messages and agent posts in one stream.
+// A chat's stream: friends' messages and agent posts. Private: members read
+// it through the my_feed view.
 export const feedItem = table(
-  { public: true },
+  {},
   {
     id: id(),
     groupId: t.u64().index('btree'),
@@ -245,6 +266,7 @@ export const planVote = table(
 
 const spacetimedb = schema({
   friend,
+  friendship,
   friendGroup,
   membership,
   invite,

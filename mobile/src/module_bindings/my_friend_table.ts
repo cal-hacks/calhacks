@@ -17,4 +17,5 @@ export default __t.row({
   city: __t.string(),
   timezone: __t.string(),
   avatar: __t.string(),
+  username: __t.string(),
 });

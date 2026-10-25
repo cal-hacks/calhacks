@@ -34,7 +34,9 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptFriendRequestReducer from "./accept_friend_request_reducer";
 import AddCheckinReducer from "./add_checkin_reducer";
+import AddGroupMemberReducer from "./add_group_member_reducer";
 import AddPhotoReducer from "./add_photo_reducer";
 import AddStatReducer from "./add_stat_reducer";
 import CancelPlanReducer from "./cancel_plan_reducer";
@@ -42,20 +44,25 @@ import ClaimAgentReducer from "./claim_agent_reducer";
 import ClaimFriendReducer from "./claim_friend_reducer";
 import ClearIngestTokenReducer from "./clear_ingest_token_reducer";
 import ConfirmPlanReducer from "./confirm_plan_reducer";
+import CreateGroupReducer from "./create_group_reducer";
 import DeleteGoalReducer from "./delete_goal_reducer";
-import JoinGroupReducer from "./join_group_reducer";
+import LeaveGroupReducer from "./leave_group_reducer";
 import PostFeedItemReducer from "./post_feed_item_reducer";
 import PostNudgeReducer from "./post_nudge_reducer";
 import ProposePlanReducer from "./propose_plan_reducer";
+import RegisterReducer from "./register_reducer";
+import RemoveFriendReducer from "./remove_friend_reducer";
 import ResetDemoReducer from "./reset_demo_reducer";
 import ReviewNudgeReducer from "./review_nudge_reducer";
 import SeedDemoReducer from "./seed_demo_reducer";
+import SendFriendRequestReducer from "./send_friend_request_reducer";
 import SendMessageReducer from "./send_message_reducer";
 import SetConsentReducer from "./set_consent_reducer";
 import SetFreeBlocksReducer from "./set_free_blocks_reducer";
 import SetFriendSettingsReducer from "./set_friend_settings_reducer";
 import SetGoalReducer from "./set_goal_reducer";
 import SetIngestTokenReducer from "./set_ingest_token_reducer";
+import SetUsernameReducer from "./set_username_reducer";
 import ToggleReactionReducer from "./toggle_reaction_reducer";
 import UpdateGoalProgressReducer from "./update_goal_progress_reducer";
 import UpdateProfileReducer from "./update_profile_reducer";
@@ -65,13 +72,14 @@ import VotePlanReducer from "./vote_plan_reducer";
 
 // Import all table schema definitions
 import CheckinRow from "./checkin_table";
-import FeedItemRow from "./feed_item_table";
 import FriendRow from "./friend_table";
-import FriendGroupRow from "./friend_group_table";
 import GoalRow from "./goal_table";
-import MembershipRow from "./membership_table";
 import MyConsentRow from "./my_consent_table";
+import MyFeedRow from "./my_feed_table";
 import MyFriendRow from "./my_friend_table";
+import MyFriendshipsRow from "./my_friendships_table";
+import MyGroupsRow from "./my_groups_table";
+import MyMembershipsRow from "./my_memberships_table";
 import MyNudgeInboxRow from "./my_nudge_inbox_table";
 import MyNudgePreviewsRow from "./my_nudge_previews_table";
 import MySettingsRow from "./my_settings_table";
@@ -99,23 +107,6 @@ const tablesSchema = __schema({
       { name: 'checkin_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, CheckinRow),
-  feedItem: __table({
-    name: 'feed_item',
-    indexes: [
-      { accessor: 'friendId', name: 'feed_item_friend_id_idx_btree', algorithm: 'btree', columns: [
-        'friendId',
-      ] },
-      { accessor: 'groupId', name: 'feed_item_group_id_idx_btree', algorithm: 'btree', columns: [
-        'groupId',
-      ] },
-      { accessor: 'id', name: 'feed_item_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
-      ] },
-    ],
-    constraints: [
-      { name: 'feed_item_id_key', constraint: 'unique', columns: ['id'] },
-    ],
-  }, FeedItemRow),
   friend: __table({
     name: 'friend',
     indexes: [
@@ -127,17 +118,6 @@ const tablesSchema = __schema({
       { name: 'friend_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, FriendRow),
-  friendGroup: __table({
-    name: 'friend_group',
-    indexes: [
-      { accessor: 'id', name: 'friend_group_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
-      ] },
-    ],
-    constraints: [
-      { name: 'friend_group_id_key', constraint: 'unique', columns: ['id'] },
-    ],
-  }, FriendGroupRow),
   goal: __table({
     name: 'goal',
     indexes: [
@@ -152,23 +132,6 @@ const tablesSchema = __schema({
       { name: 'goal_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, GoalRow),
-  membership: __table({
-    name: 'membership',
-    indexes: [
-      { accessor: 'friendId', name: 'membership_friend_id_idx_btree', algorithm: 'btree', columns: [
-        'friendId',
-      ] },
-      { accessor: 'groupId', name: 'membership_group_id_idx_btree', algorithm: 'btree', columns: [
-        'groupId',
-      ] },
-      { accessor: 'id', name: 'membership_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
-      ] },
-    ],
-    constraints: [
-      { name: 'membership_id_key', constraint: 'unique', columns: ['id'] },
-    ],
-  }, MembershipRow),
   photo: __table({
     name: 'photo',
     indexes: [
@@ -246,6 +209,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyConsentRow),
+  myFeed: __table({
+    name: 'my_feed',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyFeedRow),
   myFriend: __table({
     name: 'my_friend',
     indexes: [
@@ -253,6 +223,27 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyFriendRow),
+  myFriendships: __table({
+    name: 'my_friendships',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyFriendshipsRow),
+  myGroups: __table({
+    name: 'my_groups',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyGroupsRow),
+  myMemberships: __table({
+    name: 'my_memberships',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyMembershipsRow),
   myNudgeInbox: __table({
     name: 'my_nudge_inbox',
     indexes: [
@@ -278,7 +269,9 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_friend_request", AcceptFriendRequestReducer),
   __reducerSchema("add_checkin", AddCheckinReducer),
+  __reducerSchema("add_group_member", AddGroupMemberReducer),
   __reducerSchema("add_photo", AddPhotoReducer),
   __reducerSchema("add_stat", AddStatReducer),
   __reducerSchema("cancel_plan", CancelPlanReducer),
@@ -286,20 +279,25 @@ const reducersSchema = __reducers(
   __reducerSchema("claim_friend", ClaimFriendReducer),
   __reducerSchema("clear_ingest_token", ClearIngestTokenReducer),
   __reducerSchema("confirm_plan", ConfirmPlanReducer),
+  __reducerSchema("create_group", CreateGroupReducer),
   __reducerSchema("delete_goal", DeleteGoalReducer),
-  __reducerSchema("join_group", JoinGroupReducer),
+  __reducerSchema("leave_group", LeaveGroupReducer),
   __reducerSchema("post_feed_item", PostFeedItemReducer),
   __reducerSchema("post_nudge", PostNudgeReducer),
   __reducerSchema("propose_plan", ProposePlanReducer),
+  __reducerSchema("register", RegisterReducer),
+  __reducerSchema("remove_friend", RemoveFriendReducer),
   __reducerSchema("reset_demo", ResetDemoReducer),
   __reducerSchema("review_nudge", ReviewNudgeReducer),
   __reducerSchema("seed_demo", SeedDemoReducer),
+  __reducerSchema("send_friend_request", SendFriendRequestReducer),
   __reducerSchema("send_message", SendMessageReducer),
   __reducerSchema("set_consent", SetConsentReducer),
   __reducerSchema("set_free_blocks", SetFreeBlocksReducer),
   __reducerSchema("set_friend_settings", SetFriendSettingsReducer),
   __reducerSchema("set_goal", SetGoalReducer),
   __reducerSchema("set_ingest_token", SetIngestTokenReducer),
+  __reducerSchema("set_username", SetUsernameReducer),
   __reducerSchema("toggle_reaction", ToggleReactionReducer),
   __reducerSchema("update_goal_progress", UpdateGoalProgressReducer),
   __reducerSchema("update_profile", UpdateProfileReducer),

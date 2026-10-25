@@ -6,7 +6,8 @@ Kept apart from the uAgents wiring so it can be tested without Agentverse.
 import json
 import re
 
-from .group import FriendUpdate, common_free_windows, format_time
+from .activities import Geocoder, Idea, fallback_ideas, locate_friends, suggest
+from .group import Friend, FriendUpdate, common_free_windows, format_time
 from .llm import Llm
 from .stdb import ReducerRejected, StdbClient
 
@@ -43,9 +44,35 @@ async def digest(llm: Llm, updates: list[FriendUpdate]) -> str:
     return await llm.write(DIGEST_SYSTEM, facts) or plain_digest(updates)
 
 
-async def propose(stdb: StdbClient, group_id: int, updates: list[FriendUpdate]) -> str:
+async def recent_messages(stdb: StdbClient, group_id: int, friends: list[Friend], limit: int = 20) -> list[str]:
+    """The chat's last messages as 'Maya: text', oldest first, so ideas fit the conversation."""
+    rows = await stdb.sql(f"SELECT id, friend_id, text FROM feed_item WHERE group_id = {group_id} AND kind = 'message'")
+    who = {f.id: f.name.split()[0] for f in friends}
+    latest = sorted(rows, key=lambda r: r["id"])[-limit:]
+    return [f"{who.get(r['friend_id'], 'Someone')}: {r['text']}" for r in latest]
+
+
+def plan_title(ideas: list[Idea]) -> str:
+    """Names the mix, so a plan of meetups doesn't read as a call."""
+    in_person = sum(i.in_person for i in ideas)
+    if in_person == len(ideas):
+        return "Meetup 📍"
+    return "Hangout plans 🎉" if in_person else "Virtual hangout 🎬"
+
+
+async def propose(
+    stdb: StdbClient,
+    group_id: int,
+    updates: list[FriendUpdate],
+    *,
+    llm: Llm | None = None,
+    geo: Geocoder | None = None,
+) -> str:
     """Posts a plan to the group chat and returns the options as text.
 
+    Each option is one shared free window plus something to do: in person
+    for friends who live close, otherwise a specific virtual hangout. Claude
+    (with web search) picks timely ideas; without it, simple ones still post.
     Asking again while a plan is still open points back to it instead of
     posting a duplicate.
     """
@@ -73,25 +100,32 @@ async def propose(stdb: StdbClient, group_id: int, updates: list[FriendUpdate]) 
     if busy and after:
         names = " and ".join(f.name.split()[0] for f, _ in busy)
         note += f"; after {names}'s deadlines"
-    options = [
-        {
-            "label": f"Video call · {format_time(start, friends)}",
-            "detail": f"Everyone's free for {int((end - start).total_seconds() // 3600)}h+{note}",
+
+    nearby = await locate_friends(friends, geo)
+    messages = await recent_messages(stdb, group_id, friends)
+    starts = [start for start, _ in picked]
+    suggested = await suggest(llm, friends, nearby, updates, starts, messages)
+    title, ideas = suggested or ("", fallback_ideas(friends, nearby, len(picked)))
+    options = []
+    for idea in ideas:
+        start, end = picked[idea.window]
+        free = f"Everyone's free for {int((end - start).total_seconds() // 3600)}h+{note}"
+        options.append({
+            "label": f"{idea.label} · {format_time(start, idea.who)}",
+            "detail": f"{idea.detail} · {free}" if idea.detail else free,
             "startsAt": start.isoformat(),
-        }
-        for start, end in picked
-    ]
+        })
     try:
         await stdb.call(
             "propose_plan",
             group_id=group_id,
-            title="Catch-up call 📞",
+            title=title or plan_title(ideas),
             options=json.dumps(options),
         )
     except ReducerRejected as e:
         return f"I couldn't post the plan: {e}"
     listed = "\n".join(f"{i}. {o['label']}" for i, o in enumerate(options, 1))
-    return f"Here are times when everyone's free:\n{listed}\nI posted these to the group chat to vote on."
+    return f"Here are some plans for when everyone's free:\n{listed}\nI posted these to the group chat to vote on."
 
 
 async def answer(
@@ -99,5 +133,5 @@ async def answer(
 ) -> str:
     reply = await digest(llm, updates)
     if wants_plan(text):
-        reply += "\n\n" + await propose(stdb, group_id, updates)
+        reply += "\n\n" + await propose(stdb, group_id, updates, llm=llm)
     return reply

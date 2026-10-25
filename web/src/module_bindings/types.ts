@@ -60,12 +60,14 @@ export const Friend = __t.object("Friend", {
   city: __t.string(),
   timezone: __t.string(),
   avatar: __t.string(),
+  username: __t.string(),
 });
 export type Friend = __Infer<typeof Friend>;
 
 export const FriendGroup = __t.object("FriendGroup", {
   id: __t.u64(),
   name: __t.string(),
+  isDirect: __t.bool(),
 });
 export type FriendGroup = __Infer<typeof FriendGroup>;
 
@@ -77,6 +79,15 @@ export const FriendSettings = __t.object("FriendSettings", {
   nudgePreview: __t.bool(),
 });
 export type FriendSettings = __Infer<typeof FriendSettings>;
+
+export const Friendship = __t.object("Friendship", {
+  id: __t.u64(),
+  fromId: __t.u64(),
+  toId: __t.u64(),
+  status: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Friendship = __Infer<typeof Friendship>;
 
 export const Goal = __t.object("Goal", {
   id: __t.u64(),
@@ -112,8 +123,20 @@ export type Membership = __Infer<typeof Membership>;
 export const MyConsent = __t.object("MyConsent", {});
 export type MyConsent = __Infer<typeof MyConsent>;
 
+export const MyFeed = __t.object("MyFeed", {});
+export type MyFeed = __Infer<typeof MyFeed>;
+
 export const MyFriend = __t.object("MyFriend", {});
 export type MyFriend = __Infer<typeof MyFriend>;
+
+export const MyFriendships = __t.object("MyFriendships", {});
+export type MyFriendships = __Infer<typeof MyFriendships>;
+
+export const MyGroups = __t.object("MyGroups", {});
+export type MyGroups = __Infer<typeof MyGroups>;
+
+export const MyMemberships = __t.object("MyMemberships", {});
+export type MyMemberships = __Infer<typeof MyMemberships>;
 
 export const MyNudgeInbox = __t.object("MyNudgeInbox", {});
 export type MyNudgeInbox = __Infer<typeof MyNudgeInbox>;

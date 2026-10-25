@@ -4,8 +4,12 @@
   (Health Shortcut), or a Screen Time win: Claude decides whether it's worth a
   group-chat post, and the friend's agent posts it. An unusual photo becomes a
   "weirdest place" post.
-- "We should catch up" (and similar) in the chat: the coordinator finds times
-  everyone's free and posts a plan to vote on.
+- "We should catch up" (and similar) in a chat (1:1 or group): the coordinator
+  finds times everyone in that chat is free, pairs each with something to do
+  (in person for friends who live close), and posts a plan to vote on.
+
+Agent posts go to the friend's first group chat, never a 1:1: a highlight is
+for the group, and friends with only 1:1 chats get no agent posts.
 
 Python has no SpacetimeDB subscription SDK, so this polls over HTTP SQL and
 remembers the last ids it saw. The first poll only records where things are,
@@ -17,11 +21,11 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .coordinator import propose
-from .group import FriendUpdate
+from .group import FriendUpdate, friend_update, group_friends
 from .llm import Llm
 from .stdb import ReducerRejected, StdbClient
 
@@ -31,6 +35,8 @@ CATCH_UP = re.compile(
     r"\b(catch ?up|hang ?out|get together|plan something|video call|facetime|let'?s (call|meet|hop on))\b",
     re.I,
 )
+# How far back a plan looks for what each friend shared.
+LOOKBACK = timedelta(days=7)
 
 STORY_SYSTEM = """You are a friend's agent in a group chat of college friends who moved to different cities. \
 You decide whether one thing that just happened is worth a short post to the group, and write it.
@@ -91,7 +97,9 @@ class Watcher:
     last_stat: int = 0
     last_photo: int = 0
     done_goals: set[int] = field(default_factory=set)
-    groups: frozenset[int] = frozenset()
+    # The demo group: reset_demo + seed_demo makes a new one. New 1:1s and
+    # groups appear all the time and don't change it.
+    first_group: int | None = None
 
     async def tick(self, gather: Callable[[], Awaitable[list[FriendUpdate]]]) -> None:
         """One poll. `gather` asks the friend agents for updates (used for plans)."""
@@ -109,15 +117,15 @@ class Watcher:
         done = {g["id"] for g in goals if g["status"] == "done"}
 
         # reset_demo + seed_demo makes a new group, and ids keep counting up, so
-        # the reseeded history would look new. Start over when the groups change.
-        groups = frozenset(r["id"] for r in await self.stdb.sql("SELECT id FROM friend_group"))
-        if not self.primed or groups != self.groups:
+        # the reseeded history would look new. Start over when that happens.
+        first_group = min((r["id"] for r in await self.stdb.sql("SELECT id FROM friend_group")), default=None)
+        if not self.primed or first_group != self.first_group:
             self.last_checkin = max((c["id"] for c in checkins), default=0)
             self.last_message = max((m["id"] for m in messages), default=0)
             self.last_stat = max((x["id"] for x in stats), default=0)
             self.last_photo = max((p["id"] for p in photos), default=0)
             self.done_goals = done
-            self.groups = groups
+            self.first_group = first_group
             self.primed = True
             return
 
@@ -238,10 +246,19 @@ class Watcher:
             log.info("Skipped %s for %s: %s", kind, friend.name, e)
 
     async def plan(self, group_id: int, gather: Callable[[], Awaitable[list[FriendUpdate]]]) -> None:
-        updates = await gather()
-        result = await propose(self.stdb, group_id, updates)
+        """Plans for the people in this chat only. Friends without a running
+        agent (signed up since the agents started) are read directly."""
+        members = await group_friends(self.stdb, group_id)
+        ids = {f.id for f in members}
+        updates = [u for u in await gather() if u.friend.id in ids]
+        have = {u.friend.id for u in updates}
+        since = datetime.now(UTC) - LOOKBACK
+        updates += [await friend_update(self.stdb, f, since) for f in members if f.id not in have]
+        result = await propose(self.stdb, group_id, updates, llm=self.llm)
         log.info("Catch-up request: %s", result.splitlines()[0])
 
     async def group_of(self, friend_id: int) -> int | None:
-        rows = await self.stdb.sql(f"SELECT group_id FROM membership WHERE friend_id = {friend_id}")
-        return rows[0]["group_id"] if rows else None
+        """The friend's first group chat (not a 1:1), if any."""
+        mine = {r["group_id"] for r in await self.stdb.sql(f"SELECT group_id FROM membership WHERE friend_id = {friend_id}")}
+        groups = await self.stdb.sql("SELECT id, is_direct FROM friend_group")
+        return min((g["id"] for g in groups if g["id"] in mine and not g["is_direct"]), default=None)
