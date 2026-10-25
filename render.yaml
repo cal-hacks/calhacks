@@ -1,0 +1,28 @@
+# Render blueprint: the agent service (web server + Fetch agents + watcher).
+# Secrets are marked sync: false, so Render asks for them when you create the
+# service from this file; they never live in the repo.
+services:
+  - type: web
+    name: waggle-agent
+    runtime: python
+    rootDir: agent
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: ./start.sh
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SPACETIMEDB_URI
+        value: https://maincloud.spacetimedb.com
+      - key: SPACETIMEDB_DB_NAME
+        sync: false
+      - key: SPACETIMEDB_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FETCH_AGENT_SEED
+        sync: false
+      - key: AGENTVERSE_API_KEY
+        sync: false
+      - key: WEB_ORIGINS
+        value: "*"
