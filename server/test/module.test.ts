@@ -429,3 +429,57 @@ describe('the demo cast', () => {
     expect(rows('feedItem').at(-1)).toMatchObject({ kind: 'plan_locked', createdBy: 'agent' });
   });
 });
+
+describe('deleting an account', () => {
+  const nina = auth('nina');
+  test('removes the person and everything tied to them, and nothing else', () => {
+    run(nina, ctx => mod.register(ctx, { username: 'nina', name: 'Nina', city: '', timezone: 'UTC', avatar: '' }));
+    const ninaId = rows('friend').find(f => f.username === 'nina').id as bigint;
+    const alexId = rows('friend').find(f => f.username === 'alexr').id as bigint;
+    run(nina, ctx => mod.sendFriendRequest(ctx, { toId: alexId })); // accepted, with Alex's hello
+    run(maya, ctx => mod.sendFriendRequest(ctx, { toId: ninaId }));
+    run(nina, ctx => mod.acceptFriendRequest(ctx, { fromId: fid('Maya') }));
+    run(nina, ctx => mod.createGroup(ctx, { name: 'Runners', friendIds: [fid('Maya')] }));
+    const runners = rows('friendGroup').find(g => g.name === 'Runners').id as bigint;
+    run(nina, ctx => mod.sendMessage(ctx, { groupId: runners, text: 'hi maya', replyToId: 0n }));
+    run(maya, ctx => mod.sendMessage(ctx, { groupId: runners, text: 'hi nina', replyToId: 0n }));
+    run(nina, ctx => mod.setGoal(ctx, { description: 'Run', target: 3 }));
+    run(agent, ctx => mod.logAgentEvent(ctx, { kind: 'request', actorFriendId: 0n, targetFriendId: ninaId, groupId: 0n, text: 'asked Nina', detail: '' }));
+    const before = { friends: rows('friend').length, groups: rows('friendGroup').length };
+
+    // Someone else can't delete her; the agent can.
+    expect(() => run(maya, ctx => mod.deleteAccount(ctx, { friendId: ninaId }))).toThrow(/your own/);
+    run(agent, ctx => mod.deleteAccount(ctx, { friendId: ninaId }));
+
+    expect(rows('friend')).toHaveLength(before.friends - 1);
+    expect(rows('friendship').filter(f => f.fromId === ninaId || f.toId === ninaId)).toHaveLength(0);
+    expect(rows('membership').filter(m => m.friendId === ninaId)).toHaveLength(0);
+    // Her two 1:1s are gone; the Runners group stays, with Maya's message only.
+    expect(rows('friendGroup')).toHaveLength(before.groups - 2);
+    expect(rows('feedItem').filter(f => f.groupId === runners).map(f => f.text)).toEqual(['hi nina']);
+    expect(rows('feedItem').filter(f => f.friendId === ninaId)).toHaveLength(0);
+    expect(rows('goal').filter(g => g.friendId === ninaId)).toHaveLength(0);
+    expect(rows('consent').filter(c => c.friendId === ninaId)).toHaveLength(0);
+    expect(rows('agentEvent').filter(e => e.targetFriendId === ninaId)).toHaveLength(0);
+    // Alex and Maya are untouched.
+    expect(rows('friend').some(f => f.id === alexId)).toBe(true);
+    expect(rows('friendship').filter(f => f.status === 'accepted')).toHaveLength(10);
+  });
+
+  test('people can delete themselves', () => {
+    run(nina, ctx => mod.register(ctx, { username: 'nina', name: 'Nina', city: '', timezone: 'UTC', avatar: '' }));
+    run(nina, ctx => mod.deleteAccount(ctx, { friendId: 0n }));
+    expect(rows('friend').some(f => f.username === 'nina')).toBe(false);
+  });
+});
+
+describe('saved logins', () => {
+  test('only the agent can save them, and saving again replaces', () => {
+    run(agent, ctx => mod.putSecret(ctx, { key: 'google_tokens', value: '{"12": {"access_token": "a"}}' }));
+    run(agent, ctx => mod.putSecret(ctx, { key: 'google_tokens', value: '{}' }));
+    expect(rows('secret')).toMatchObject([{ key: 'google_tokens', value: '{}' }]);
+    expect(() => run(maya, ctx => mod.putSecret(ctx, { key: 'google_tokens', value: '{}' }))).toThrow(/only the agent/);
+    expect(() => run(agent, ctx => mod.putSecret(ctx, { key: 'other', value: '{}' }))).toThrow(/key/);
+    expect(() => run(agent, ctx => mod.putSecret(ctx, { key: 'canvas_logins', value: 'nope' }))).toThrow(/JSON/);
+  });
+});

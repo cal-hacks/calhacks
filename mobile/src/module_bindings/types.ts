@@ -221,6 +221,13 @@ export const Reaction = __t.object("Reaction", {
 });
 export type Reaction = __Infer<typeof Reaction>;
 
+export const Secret = __t.object("Secret", {
+  key: __t.string(),
+  value: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type Secret = __Infer<typeof Secret>;
+
 export const Stat = __t.object("Stat", {
   id: __t.u64(),
   friendId: __t.u64(),

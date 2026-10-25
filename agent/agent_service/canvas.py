@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .persist import Mirror
 from .stdb import ReducerRejected, StdbClient
 
 log = logging.getLogger(__name__)
@@ -35,14 +36,27 @@ class CanvasLogin:
 
 
 class CanvasStore:
-    """Canvas logins by friend id, in a JSON file only this user can read."""
+    """Canvas logins by friend id, in a JSON file only this user can read and,
+    once `attach`ed, the module's private secret table (persist.py)."""
 
     def __init__(self, path: Path):
         self.path = path
         self.logins: dict[int, CanvasLogin] = {}
+        self.mirror: Mirror | None = None
         if path.exists():
-            for fid, v in json.loads(path.read_text()).items():
-                self.logins[int(fid)] = CanvasLogin(**v)
+            self._load(json.loads(path.read_text()))
+
+    def _load(self, data: dict) -> None:
+        for fid, v in data.items():
+            self.logins[int(fid)] = CanvasLogin(**v)
+
+    async def attach(self, mirror: Mirror) -> None:
+        """Keep logins in `mirror` too; start from it when the disk was wiped."""
+        self.mirror = mirror
+        if not self.logins:
+            self._load(await mirror.load())
+            if self.logins:
+                log.info("Restored %d Canvas logins", len(self.logins))
 
     def put(self, friend_id: int, login: CanvasLogin) -> None:
         self.logins[friend_id] = login
@@ -53,9 +67,12 @@ class CanvasStore:
             self.save()
 
     def save(self) -> None:
+        data = {str(k): asdict(v) for k, v in self.logins.items()}
+        if self.mirror is not None:
+            self.mirror.push(data)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({str(k): asdict(v) for k, v in self.logins.items()}))
+        tmp.write_text(json.dumps(data))
         os.chmod(tmp, 0o600)
         tmp.replace(self.path)
 

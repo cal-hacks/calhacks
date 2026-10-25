@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Platform, View } from "react-native";
 import * as Calendar from "expo-calendar";
 import { agentPost, connectGoogleCalendar, pickPhotoPlace, pickScreenshot, syncBusyTimes } from "../lib/agentApi";
-import { setConsent, setSettings, useLive } from "../lib/live";
+import { setConsent, setSettings, shareForPlanning, useLive } from "../lib/live";
 import { Button, Card, ErrorText, Eyebrow, Input, Screen, Segmented, ToggleList, ToggleRow, Txt } from "../components/ui";
 import { useColors } from "../components/theme";
 
@@ -65,7 +65,7 @@ export default function ShareScreen() {
         ))}
       </Card>
 
-      <CalendarCard off={level("calendar") === "off"} />
+      <CalendarCard />
       <ScreenTimeCard off={level("screen_time") === "off"} />
       <PhotoCard on={level("photos") === "highlights"} />
       <CanvasCard off={level("canvas") === "off"} />
@@ -112,7 +112,8 @@ function OffNote({ show, what }: { show: boolean; what: string }) {
   return show ? <Txt small style={{ color: c.warn }}>{what} is off above.</Txt> : null;
 }
 
-function CalendarCard({ off }: { off: boolean }) {
+/** Connecting a calendar turns sharing on (for planning) if it was off. */
+function CalendarCard() {
   const a = useAction();
   const google = useAction();
   const sync = () =>
@@ -120,12 +121,14 @@ function CalendarCard({ off }: { off: boolean }) {
       if (Platform.OS === "web") throw new Error("Calendar sync runs on the phone.");
       const { status } = await Calendar.requestCalendarPermissionsAsync();
       if (status !== "granted") throw new Error("Calendar access is off. Allow it in Settings → Waggle.");
+      await shareForPlanning("calendar");
       const result = await syncBusyTimes();
       if (result === "skipped") throw new Error("Calendar sharing is off above.");
       return result && "Sent this week's busy times. Plans will fit around them.";
     });
   const connectGoogle = () =>
     google.run(async () => {
+      await shareForPlanning("calendar");
       const account = await connectGoogleCalendar();
       return account && `Connected ${account}. Free/busy refreshes every 15 minutes.`;
     });
@@ -134,11 +137,10 @@ function CalendarCard({ off }: { off: boolean }) {
       <Txt small muted>
         Your agent only sees busy times, never titles or details, so the coordinator suggests times that actually work.
       </Txt>
-      <OffNote show={off} what="Calendar" />
-      <Button variant="secondary" title="Connect Google Calendar" onPress={connectGoogle} loading={google.busy} disabled={off} />
+      <Button variant="secondary" title="Connect Google Calendar" onPress={connectGoogle} loading={google.busy} />
       <Result error={google.error} done={google.done} />
       <Txt small muted>Or use every calendar on this phone (iCloud, Outlook, Google). It refreshes whenever you open the app.</Txt>
-      <Button variant="secondary" title="Sync this phone's calendars" onPress={sync} loading={a.busy} disabled={off} />
+      <Button variant="secondary" title="Sync this phone's calendars" onPress={sync} loading={a.busy} />
       <Result error={a.error} done={a.done} />
     </Section>
   );

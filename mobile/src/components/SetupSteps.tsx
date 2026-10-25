@@ -2,12 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Linking, View } from "react-native";
 import * as Calendar from "expo-calendar";
 import * as Clipboard from "expo-clipboard";
+import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { Text } from "./Text";
 import { agentPost, connectGoogleCalendar, syncBusyTimes } from "../lib/agentApi";
 import { connectAs, setConsent, useLive } from "../lib/live";
 import { requestPhotos } from "../lib/integrations";
-import { currentUser, setCalendar, setPermissions } from "../lib/api";
+import { currentUser, setCalendar, setPermissions, updateProfile } from "../lib/api";
 import { useDB } from "../lib/db";
 import { PermissionCards } from "./PermissionCards";
 import { Button, Card, ErrorText, Input, Row, Txt } from "./ui";
@@ -19,9 +20,10 @@ import { useColors } from "./theme";
 // refuses data for a source that's off.
 
 type Level = "highlights" | "planning_only" | "off";
-type StepKey = "calendar" | "photos" | "canvas" | "more";
+type StepKey = "home" | "calendar" | "photos" | "canvas" | "more";
 
 const STEPS: { key: StepKey; icon: string; title: string }[] = [
+  { key: "home", icon: "🏠", title: "Your city" },
   { key: "calendar", icon: "📅", title: "Calendar" },
   { key: "photos", icon: "📸", title: "Photos" },
   { key: "canvas", icon: "📚", title: "Canvas" },
@@ -106,6 +108,7 @@ export function SetupSteps({ onFinish }: { onFinish: () => void }) {
         <Txt small muted>Step {step + 1} of {STEPS.length}</Txt>
       </Row>
 
+      {current.key === "home" && <HomeStep onDone={markDone} />}
       {current.key === "calendar" && <CalendarStep onDone={markDone} />}
       {current.key === "photos" && <PhotosStep onDone={markDone} />}
       {current.key === "canvas" && <CanvasStep onDone={markDone} />}
@@ -138,6 +141,43 @@ function Outcome({ error, done }: { error: string | null; done: string | null })
   const c = useColors();
   if (error) return <ErrorText>{error}</ErrorText>;
   return done ? <Txt small style={{ color: c.good }}>✓ {done}</Txt> : null;
+}
+
+function HomeStep({ onDone }: { onDone: () => void }) {
+  const me = currentUser(useDB())!;
+  const [city, setCity] = useState(me.city);
+  const a = useAction();
+
+  const save = (value: string) => {
+    updateProfile({ city: value.trim() });
+    onDone();
+    return `Saved: ${value.trim()}.`;
+  };
+  const locate = () =>
+    a.run(async () => {
+      // iOS shows its location prompt here.
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setPermissions({ location: status === "granted" ? "granted" : "denied" });
+      if (status !== "granted") throw new Error("Location is off. Type your city instead.");
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [place] = await Location.reverseGeocodeAsync(pos.coords);
+      const name = place?.city ?? place?.subregion ?? place?.district;
+      if (!name) throw new Error("Couldn't name that spot. Type your city instead.");
+      const found = `${name}${place?.region ? `, ${place.region}` : ""}`;
+      setCity(found);
+      return save(found);
+    });
+
+  return (
+    <StepCard icon="🏠" title="Where are you based?" why="Friends who live within 20 miles of each other get in-person ideas instead of just a video call. Friends only ever see your city, never an address.">
+      <Input placeholder="Berkeley, CA" value={city} onChangeText={setCity} autoCapitalize="words" />
+      <Row wrap>
+        <Button title="Save city" onPress={() => a.run(async () => save(city))} loading={a.busy} disabled={!city.trim()} />
+        <Button variant="secondary" title="📍 Use my location" onPress={locate} />
+      </Row>
+      <Outcome error={a.error} done={a.done} />
+    </StepCard>
+  );
 }
 
 function CalendarStep({ onDone }: { onDone: () => void }) {

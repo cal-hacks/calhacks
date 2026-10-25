@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type Rea
 import { useSearchParams } from "react-router-dom";
 import exifr from "exifr";
 import { useDB } from "../lib/db";
-import { currentUser, setCalendar, setPermissions } from "../lib/api";
+import { currentUser, setCalendar, setPermissions, updateProfile } from "../lib/api";
 import { agentPost } from "../lib/agentApi";
 import { connectCalendar } from "../lib/integrations";
 import { connectAs, setConsent, useLive } from "../lib/live";
@@ -12,9 +12,10 @@ import { PermissionCards } from "./PermissionCards";
 // browser prompt. Connecting a source also turns on sharing for it, since the
 // agent service refuses data for a source that's off.
 
-type StepKey = "calendar" | "photos" | "canvas" | "more";
+type StepKey = "home" | "calendar" | "photos" | "canvas" | "more";
 
 const STEPS: { key: StepKey; icon: string; title: string }[] = [
+  { key: "home", icon: "🏠", title: "Your city" },
   { key: "calendar", icon: "📅", title: "Google Calendar" },
   { key: "photos", icon: "📸", title: "Photos" },
   { key: "canvas", icon: "📚", title: "Canvas" },
@@ -50,7 +51,10 @@ function Outcome({ error, done }: { error: string | null; done: string | null })
 export function SetupSteps({ onFinish }: { onFinish: () => void }) {
   const me = currentUser(useDB());
   const live = useLive();
-  const [step, setStep] = useState(0);
+  // Back from Google's sign-in: pick up on the calendar step.
+  const [step, setStep] = useState(() =>
+    new URLSearchParams(window.location.search).has("connected") ? STEPS.findIndex((s) => s.key === "calendar") : 0,
+  );
   const [connected, setConnected] = useState<Partial<Record<StepKey, boolean>>>({});
 
   // Welcome sits outside the main layout, which normally connects.
@@ -77,6 +81,7 @@ export function SetupSteps({ onFinish }: { onFinish: () => void }) {
       </ol>
       <p className="small muted">Step {step + 1} of {STEPS.length}</p>
 
+      {current.key === "home" && <HomeStep onDone={() => markDone("home")} />}
       {current.key === "calendar" && <CalendarStep onDone={() => markDone("calendar")} />}
       {current.key === "photos" && <PhotosStep onDone={() => markDone("photos")} />}
       {current.key === "canvas" && <CanvasStep onDone={() => markDone("canvas")} />}
@@ -103,6 +108,59 @@ function StepCard({ icon, title, why, children }: { icon: string; title: string;
       <p className="muted small">{why}</p>
       {children}
     </section>
+  );
+}
+
+/** "Berkeley, CA" from coordinates, via OpenStreetMap's reverse geocoder. */
+async function cityAt(lat: number, lon: number): Promise<string | null> {
+  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&addressdetails=1&lat=${lat}&lon=${lon}`);
+  if (!r.ok) return null;
+  const a = (await r.json()).address ?? {};
+  const city = a.city ?? a.town ?? a.village ?? a.suburb ?? a.county;
+  const code = String(a["ISO3166-2-lvl4"] ?? "");
+  const region = a.country_code === "us" && code.startsWith("US-") ? code.slice(3) : a.state ?? a.country;
+  return city ? `${city}${region ? `, ${region}` : ""}` : null;
+}
+
+function HomeStep({ onDone }: { onDone: () => void }) {
+  const me = currentUser(useDB())!;
+  const [city, setCity] = useState(me.city);
+  const a = useAction();
+
+  const save = (value: string) => {
+    updateProfile({ city: value.trim() });
+    onDone();
+    return `Saved: ${value.trim()}.`;
+  };
+  const locate = () =>
+    a.run(async () => {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 15000, maximumAge: 600000 }),
+      ).catch(() => {
+        throw new Error("Location was blocked. Type your city instead.");
+      });
+      setPermissions({ location: "granted" });
+      const found = await cityAt(pos.coords.latitude, pos.coords.longitude);
+      if (!found) throw new Error("Couldn't name that spot. Type your city instead.");
+      setCity(found);
+      return save(found);
+    });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    a.run(async () => save(city));
+  };
+
+  return (
+    <StepCard icon="🏠" title="Where are you based?" why="Friends who live within 20 miles of each other get in-person ideas instead of just a video call. Friends only ever see your city, never an address.">
+      <form className="stack-sm" onSubmit={submit}>
+        <input className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Berkeley, CA" aria-label="Your city" />
+        <div className="row-actions wrap">
+          <button className="btn btn-primary" disabled={a.busy || !city.trim()}>Save city</button>
+          <button type="button" className="btn btn-secondary" onClick={locate} disabled={a.busy}>📍 Use my location</button>
+        </div>
+      </form>
+      <Outcome error={a.error} done={a.done} />
+    </StepCard>
   );
 }
 

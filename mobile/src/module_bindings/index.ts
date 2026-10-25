@@ -47,12 +47,14 @@ import ClaimFriendReducer from "./claim_friend_reducer";
 import ClearIngestTokenReducer from "./clear_ingest_token_reducer";
 import ConfirmPlanReducer from "./confirm_plan_reducer";
 import CreateGroupReducer from "./create_group_reducer";
+import DeleteAccountReducer from "./delete_account_reducer";
 import DeleteGoalReducer from "./delete_goal_reducer";
 import LeaveGroupReducer from "./leave_group_reducer";
 import LogAgentEventReducer from "./log_agent_event_reducer";
 import PostFeedItemReducer from "./post_feed_item_reducer";
 import PostNudgeReducer from "./post_nudge_reducer";
 import ProposePlanReducer from "./propose_plan_reducer";
+import PutSecretReducer from "./put_secret_reducer";
 import RegisterReducer from "./register_reducer";
 import RemoveFriendReducer from "./remove_friend_reducer";
 import ResetDemoReducer from "./reset_demo_reducer";
@@ -297,12 +299,14 @@ const reducersSchema = __reducers(
   __reducerSchema("clear_ingest_token", ClearIngestTokenReducer),
   __reducerSchema("confirm_plan", ConfirmPlanReducer),
   __reducerSchema("create_group", CreateGroupReducer),
+  __reducerSchema("delete_account", DeleteAccountReducer),
   __reducerSchema("delete_goal", DeleteGoalReducer),
   __reducerSchema("leave_group", LeaveGroupReducer),
   __reducerSchema("log_agent_event", LogAgentEventReducer),
   __reducerSchema("post_feed_item", PostFeedItemReducer),
   __reducerSchema("post_nudge", PostNudgeReducer),
   __reducerSchema("propose_plan", ProposePlanReducer),
+  __reducerSchema("put_secret", PutSecretReducer),
   __reducerSchema("register", RegisterReducer),
   __reducerSchema("remove_friend", RemoveFriendReducer),
   __reducerSchema("reset_demo", ResetDemoReducer),

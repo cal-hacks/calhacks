@@ -162,7 +162,8 @@ function queueRefresh() {
   });
 }
 
-const tokenKey = (userId: string) => `orbit.live.token.${userId}`;
+// Per server and database: a token from another server is refused there.
+const tokenKey = (userId: string) => `orbit.live.token.${URI}/${DB_NAME}.${userId}`;
 
 function readToken(userId: string): string | undefined {
   try {
@@ -190,11 +191,22 @@ export function connectAs(user: User) {
   disconnect();
   connectedUserId = user.id;
   set({ ...EMPTY, status: "connecting" });
+  build(user, readToken(user.id));
+}
 
+function forgetToken(userId: string) {
+  try {
+    localStorage.removeItem(tokenKey(userId));
+  } catch {
+    // Storage blocked: nothing saved to forget.
+  }
+}
+
+function build(user: User, token: string | undefined) {
   conn = DbConnection.builder()
     .withUri(URI)
     .withDatabaseName(DB_NAME)
-    .withToken(readToken(user.id))
+    .withToken(token)
     .onConnect((c, _identity, token) => {
       saveToken(user.id, token);
       for (const table of [
@@ -222,7 +234,16 @@ export function connectAs(user: User) {
           "SELECT * FROM my_settings",
         ]);
     })
-    .onConnectError((_ctx, e) => set({ status: "error", error: `Can't reach the server (${message(e)}).` }))
+    .onConnectError((_ctx, e) => {
+      // A saved token the server refuses (a reset, or another server's):
+      // start over without it. Demo people reclaim their seat on joining.
+      if (token && connectedUserId === user.id && /token|401/i.test(message(e))) {
+        forgetToken(user.id);
+        build(user, undefined);
+        return;
+      }
+      set({ status: "error", error: `Can't reach the server (${message(e)}).` });
+    })
     .onDisconnect(() => {
       if (conn) set({ status: "error", error: "Lost connection to the server." });
     })
@@ -421,6 +442,12 @@ export async function votePlan(planId: bigint, optionId: bigint) {
 /** What a source may be used for: shared as highlights, planning only, or off. */
 export async function setConsent(source: string, shareLevel: "highlights" | "planning_only" | "off") {
   await live()?.reducers.setConsent({ source, shareLevel });
+}
+
+/** Turn a source on for planning if it's off (connecting it means "use it"); finer choices are kept. */
+export async function shareForPlanning(source: string) {
+  const level = state.myConsent.find((c) => c.source === source)?.shareLevel ?? "off";
+  if (level === "off") await setConsent(source, "planning_only");
 }
 
 /** Roast me, Check on me and who gets nudged. Other settings keep their current values. */
