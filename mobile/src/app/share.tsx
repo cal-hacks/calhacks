@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Platform, Text, View } from "react-native";
 import * as Calendar from "expo-calendar";
 import * as Clipboard from "expo-clipboard";
-import { AGENT_URL, agentPost, pickPhotoPlace, pickScreenshot, syncBusyTimes } from "../lib/agentApi";
+import { AGENT_URL, agentPost, connectGoogleCalendar, pickPhotoPlace, pickScreenshot, syncBusyTimes } from "../lib/agentApi";
 import { ingestToken, setConsent, useLive } from "../lib/live";
 import { healthKitAvailable, syncHealth } from "../lib/health";
 import { Button, Card, ErrorText, Eyebrow, Input, Screen, Segmented, Txt } from "../components/ui";
@@ -108,6 +108,7 @@ function OffNote({ show, what }: { show: boolean; what: string }) {
 
 function CalendarCard({ off }: { off: boolean }) {
   const a = useAction();
+  const google = useAction();
   const sync = () =>
     a.run(async () => {
       if (Platform.OS === "web") throw new Error("Calendar sync runs on the phone.");
@@ -117,15 +118,21 @@ function CalendarCard({ off }: { off: boolean }) {
       if (result === "skipped") throw new Error("Calendar sharing is off above.");
       return result && "Sent this week's busy times. Plans will fit around them.";
     });
+  const connectGoogle = () =>
+    google.run(async () => {
+      const account = await connectGoogleCalendar();
+      return account && `Connected ${account}. Free/busy refreshes every 15 minutes.`;
+    });
   return (
     <Section title="📅 Calendar">
       <Txt small muted>
-        Reads busy times from every calendar on this phone (iCloud, Google, Outlook) for the next week, so the coordinator
-        suggests times that actually work. Titles and details never leave the phone. It refreshes whenever you open Orbit.
-        Google Calendar not showing? Add your Google account in iOS Settings → Calendar → Calendar Accounts.
+        Your agent only sees busy times, never titles or details, so the coordinator suggests times that actually work.
       </Txt>
       <OffNote show={off} what="Calendar" />
-      <Button variant="secondary" title="Sync my calendar" onPress={sync} loading={a.busy} disabled={off} />
+      <Button variant="secondary" title="Connect Google Calendar" onPress={connectGoogle} loading={google.busy} disabled={off} />
+      <Result error={google.error} done={google.done} />
+      <Txt small muted>Or use every calendar on this phone (iCloud, Outlook, Google). It refreshes whenever you open the app.</Txt>
+      <Button variant="secondary" title="Sync this phone's calendars" onPress={sync} loading={a.busy} disabled={off} />
       <Result error={a.error} done={a.done} />
     </Section>
   );

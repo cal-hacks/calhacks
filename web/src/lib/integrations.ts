@@ -1,6 +1,6 @@
 import type { CalendarProvider, Id } from "./types";
 import type { ContactEntry, GoogleProfile } from "./api";
-import { agentPost } from "./agentApi";
+import { AgentError, agentPost } from "./agentApi";
 
 // Browser-side glue for third-party sign-in, device permissions and contacts.
 // Google Calendar tokens go to the agent service for free/busy (agentApi.ts).
@@ -128,6 +128,21 @@ export async function signInWithGoogleAndCalendar(): Promise<GoogleProfile | nul
  * Without either, it falls back to a demo prompt so the flow is clickable.
  */
 export async function connectCalendar(provider: CalendarProvider, userId: Id, emailHint?: string): Promise<CalendarConnectResult> {
+  if (provider === "google") {
+    // Preferred: the agent service runs Google's sign-in and keeps a refresh
+    // token, so sync never expires. It sends the browser back here with
+    // ?connected=google&account=..., which PermissionCards picks up.
+    try {
+      const { url } = await agentPost<{ url: string }>("/oauth/google/start", {
+        return_to: window.location.href.split("?")[0],
+      });
+      window.location.href = url;
+      return { status: "redirecting" };
+    } catch (e) {
+      // 503: the service has no Google client secret; use the browser token flow.
+      if (!(e instanceof AgentError && e.status === 503)) throw e;
+    }
+  }
   if (provider === "google" && GOOGLE_CLIENT_ID) {
     await loadGoogleIdentity();
     const token = await requestGoogleToken("https://www.googleapis.com/auth/calendar.freebusy email", emailHint);

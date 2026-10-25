@@ -37,12 +37,44 @@ WEEKEND_HOURS = (time(10), time(23))
 Block = tuple[datetime, datetime]
 
 
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
 @dataclass
 class GoogleToken:
     access_token: str
     expires_at: datetime
     # When we last tried to sync; None means try on the next refresh.
     synced_at: datetime | None = None
+    # From the server-side sign-in flow (google_oauth.py). With it, an expired
+    # access token is renewed instead of dropped.
+    refresh_token: str | None = None
+
+
+@dataclass(frozen=True)
+class OAuthClient:
+    client_id: str
+    client_secret: str
+
+
+async def refresh_access_token(http: httpx.AsyncClient, oauth: OAuthClient, token: GoogleToken, now: datetime) -> bool:
+    """Swap the refresh token for a new access token. False if Google refused it."""
+    r = await http.post(
+        TOKEN_URL,
+        data={
+            "client_id": oauth.client_id,
+            "client_secret": oauth.client_secret,
+            "refresh_token": token.refresh_token,
+            "grant_type": "refresh_token",
+        },
+    )
+    if r.status_code in (400, 401):
+        return False
+    r.raise_for_status()
+    body = r.json()
+    token.access_token = body["access_token"]
+    token.expires_at = now + timedelta(seconds=int(body.get("expires_in", 3600)))
+    return True
 
 
 class TokenStore:
@@ -57,6 +89,7 @@ class TokenStore:
                     t["access_token"],
                     datetime.fromisoformat(t["expires_at"]),
                     datetime.fromisoformat(t["synced_at"]) if t.get("synced_at") else None,
+                    t.get("refresh_token"),
                 )
 
     def put(self, friend_id: int, token: GoogleToken) -> None:
@@ -148,15 +181,19 @@ async def sync_friend(
     friend_id: int,
     *,
     now: datetime | None = None,
+    oauth: OAuthClient | None = None,
 ) -> str:
     """Refreshes one friend's free blocks. Returns what happened, for logs and the API."""
     now = now or datetime.now(UTC)
     token = store.tokens.get(friend_id)
     if token is None:
         return "no_token"
-    if token.expires_at <= now:
-        store.drop(friend_id)
-        return "expired"
+    # Renew a minute early so a sync never runs on a token about to expire.
+    if token.expires_at <= now + timedelta(minutes=1):
+        if not (token.refresh_token and oauth and await refresh_access_token(http, oauth, token, now)):
+            store.drop(friend_id)
+            return "expired"
+        store.save()
     rows = await stdb.sql(f"SELECT timezone FROM friend WHERE id = {friend_id}")
     if not rows:
         store.drop(friend_id)
@@ -165,6 +202,7 @@ async def sync_friend(
         busy = await fetch_busy(http, token.access_token, now, now + timedelta(days=DAYS_AHEAD))
     except GoogleAuthError as e:
         log.info("Google refused the token for friend %s: %s", friend_id, e)
+        # Access revoked or scopes changed: the refresh token won't help either.
         store.drop(friend_id)
         return "expired"
     if not await store_free_blocks(stdb, friend_id, rows[0]["timezone"], busy, now):
@@ -204,7 +242,12 @@ async def sync_device_busy(stdb: StdbClient, friend_id: int, busy: list[Block], 
 
 
 async def refresh_due(
-    stdb: StdbClient, http: httpx.AsyncClient, store: TokenStore, *, now: datetime | None = None
+    stdb: StdbClient,
+    http: httpx.AsyncClient,
+    store: TokenStore,
+    *,
+    now: datetime | None = None,
+    oauth: OAuthClient | None = None,
 ) -> dict[int, str]:
     """Syncs every friend whose blocks are stale or whose last try was skipped."""
     now = now or datetime.now(UTC)
@@ -212,7 +255,7 @@ async def refresh_due(
     for friend_id, token in list(store.tokens.items()):
         if token.synced_at is None or now - token.synced_at >= REFRESH_EVERY:
             try:
-                results[friend_id] = await sync_friend(stdb, http, store, friend_id, now=now)
+                results[friend_id] = await sync_friend(stdb, http, store, friend_id, now=now, oauth=oauth)
             except Exception:
                 # One friend's bad response shouldn't stop the others.
                 log.exception("Calendar refresh failed for friend %s", friend_id)

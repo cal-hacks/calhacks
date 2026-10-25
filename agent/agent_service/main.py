@@ -21,7 +21,8 @@ from app.main import router as coach_router
 from . import canvas
 from .auth import current_friend
 from .config import load_settings
-from .google_calendar import GoogleToken, TokenStore, refresh_due, sync_device_busy, sync_friend
+from .google_calendar import GoogleToken, OAuthClient, TokenStore, refresh_due, sync_device_busy, sync_friend
+from .google_oauth import router as google_oauth_router
 from .ingest import router as ingest_router
 from .llm import Llm
 from .stdb import StdbClient
@@ -36,7 +37,7 @@ async def refresh_calendars(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(CALENDAR_POLL_SECONDS)
         try:
-            await refresh_due(app.state.stdb, app.state.google, app.state.tokens)
+            await refresh_due(app.state.stdb, app.state.google, app.state.tokens, oauth=app.state.google_oauth)
             await canvas.refresh_due(app.state.stdb, app.state.google, app.state.canvas)
         except Exception:
             log.exception("Calendar refresh failed")
@@ -55,6 +56,14 @@ async def lifespan(app: FastAPI):
         app.state.canvas = canvas.CanvasStore(settings.google_token_file.with_name(".canvas_tokens.json"))
     if not hasattr(app.state, "llm"):
         app.state.llm = Llm(settings.anthropic_api_key)
+    if not hasattr(app.state, "google_oauth"):
+        app.state.google_oauth = (
+            OAuthClient(settings.google_client_id, settings.google_client_secret)
+            if settings.google_client_id and settings.google_client_secret
+            else None
+        )
+    app.state.public_url = settings.public_url
+    app.state.web_origins = settings.web_origins
     # Shared outbound client (Google, Canvas, OpenStreetMap).
     app.state.http = app.state.google
     refresher = asyncio.create_task(refresh_calendars(app))
@@ -84,6 +93,7 @@ async def health():
 
 app.include_router(coach_router)
 app.include_router(ingest_router)
+app.include_router(google_oauth_router)
 
 
 # Lets the web app and the Shortcut check that an ingest token works.
@@ -110,7 +120,7 @@ async def google_calendar_token(body: GoogleTokenIn, friend_id: Friend):
     app.state.tokens.put(
         friend_id, GoogleToken(body.access_token, now + timedelta(seconds=body.expires_in))
     )
-    status = await sync_friend(app.state.stdb, app.state.google, app.state.tokens, friend_id, now=now)
+    status = await sync_friend(app.state.stdb, app.state.google, app.state.tokens, friend_id, now=now, oauth=app.state.google_oauth)
     if status == "expired":
         raise HTTPException(400, "Google didn't accept that token")
     return {"status": status}
