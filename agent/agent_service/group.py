@@ -53,7 +53,9 @@ async def friend_update(stdb: StdbClient, friend: Friend, since: datetime) -> Fr
 
     posts = await stdb.sql(f"SELECT kind, text, created_by, created_at FROM feed_item WHERE friend_id = {fid}")
     for p in sorted(posts, key=lambda p: p["created_at"]):
-        if p["created_by"] == "agent" and p["kind"] in HIGHLIGHT_KINDS and p["created_at"] >= since:
+        # The same win goes to each of the friend's chats: count it once.
+        if p["created_by"] == "agent" and p["kind"] in HIGHLIGHT_KINDS and p["created_at"] >= since \
+                and p["text"] not in update.highlights:
             update.highlights.append(p["text"])
 
     checkins = await stdb.sql(f"SELECT text, created_at FROM checkin WHERE friend_id = {fid}")

@@ -1,15 +1,16 @@
 """Reset the demo before a run-through.
 
-    uv run python -m agent_service.demo            # reseed + a ready-made plan
-    uv run python -m agent_service.demo --no-plan  # reseed only
+    uv run python -m agent_service.demo          # reseed: the scene is set, nothing has happened yet
+    uv run python -m agent_service.demo --plan   # reseed + a ready-made plan in the Class of '25
 
-Wipes the database (every account, not just the cast), seeds the demo world
-(server/src/seed.ts) and posts a plan in the Class of '25 chat. The plan is
-the real thing, not canned text: the coordinator reads the seeded chat and
-what friends shared, geocodes everyone's city (Riley and Priya are close
-enough to meet in person) and has Claude search the web for specific ideas,
-so it's waiting on screen when the demo starts. Saying "let's catch up" in a
-1:1 (Riley and Priya's is set up for it) shows the same thing live.
+Wipes the database (every account, not just the cast, and the Agent Network
+history) and seeds the demo world (server/src/seed.ts): a quiet group chat
+and a few hints. The demo itself (a goal win, "let's catch up", the cast
+replying and voting) happens live. --plan is a backup that posts a real plan
+up front: the coordinator reads the chat, geocodes everyone's city and has
+Claude search the web, so there's something to show if the network is slow.
+
+Restart the agents after a reset, or wait for them to notice (a few seconds).
 
 Point it at Maincloud with SPACETIMEDB_URI, SPACETIMEDB_DB_NAME and
 SPACETIMEDB_TOKEN (the database owner's token), like the agents themselves.
@@ -30,7 +31,7 @@ from .watcher import LOOKBACK
 log = logging.getLogger(__name__)
 
 
-async def reset(plan: bool = True) -> None:
+async def reset(plan: bool = False) -> None:
     settings = load_settings()
     stdb = StdbClient(settings.stdb_uri, settings.stdb_db, settings.stdb_token)
     await stdb.call("reset_demo")
@@ -52,10 +53,10 @@ async def reset(plan: bool = True) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reset the Waggle demo world.")
-    parser.add_argument("--no-plan", action="store_true", help="reseed only; skip the ready-made plan")
+    parser.add_argument("--plan", action="store_true", help="also post a ready-made plan in the Class of '25")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    asyncio.run(reset(plan=not args.no_plan))
+    asyncio.run(reset(plan=args.plan))
 
 
 if __name__ == "__main__":

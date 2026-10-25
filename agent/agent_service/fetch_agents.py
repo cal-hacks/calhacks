@@ -28,6 +28,8 @@ from uagents_core.contrib.protocols.chat import (
 
 from .config import load_settings
 from .coordinator import answer
+from .director import Director
+from .events import EVENTS
 from .group import Friend, FriendUpdate, first_group_id, friend_update, group_friends
 from .llm import Llm
 from .stdb import StdbClient
@@ -157,6 +159,9 @@ def coordinator_agent(
         await ctx.send(sender, ChatMessage(content=[TextContent(text=reply), EndSessionContent()]))
 
     watcher = Watcher(stdb, llm)
+    director = Director(stdb, llm)
+    # What the agents do shows up live on the Agent Network screen (web /agents).
+    EVENTS.use(stdb)
 
     @agent.on_interval(period=3.0)
     async def watch(ctx: Context):
@@ -165,6 +170,10 @@ def coordinator_agent(
         except Exception:
             # A bad poll (server restarting, network blip) shouldn't stop the loop.
             ctx.logger.exception("Watcher poll failed")
+        try:
+            await director.tick()
+        except Exception:
+            ctx.logger.exception("Cast director poll failed")
 
     @chat.on_message(ChatAcknowledgement)
     async def on_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):

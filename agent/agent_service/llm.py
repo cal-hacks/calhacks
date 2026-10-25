@@ -1,6 +1,7 @@
 """Claude calls. Everything here returns None on failure so callers can fall
 back to plain text instead of breaking the chat."""
 
+import asyncio
 import json
 import logging
 import re
@@ -9,25 +10,29 @@ from typing import Any
 import anthropic
 
 MODEL = "claude-opus-5-5"
-# Screenshot reading and photo captions (the plan's choice: fast and cheap).
+# Screenshot reading, photo captions and the demo cast's chatter: fast and cheap.
 VISION_MODEL = "claude-haiku-5-5"
 log = logging.getLogger(__name__)
 WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search"}
 # A long search turn can stop with pause_turn; resend to let the server resume.
 MAX_CONTINUATIONS = 3
+# A plan someone's waiting on in the chat: past this, use the plain ideas.
+SEARCH_TIMEOUT_S = 30.0
 FALLBACK = dict(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
 
 
 class Llm:
     def __init__(self, api_key: str):
         self._client = anthropic.AsyncAnthropic(api_key=api_key) if api_key else None
+        # The web searches Claude ran in the last search_json call, for the Agent Network screen.
+        self.last_queries: list[str] = []
 
     @property
     def available(self) -> bool:
         return self._client is not None
 
-    async def write(self, system: str, prompt: str, *, effort: str = "low") -> str | None:
-        return await self._create(system, prompt, {"effort": effort})
+    async def write(self, system: str, prompt: str, *, effort: str = "low", model: str = MODEL) -> str | None:
+        return await self._create(system, prompt, {"effort": effort}, model=model)
 
     async def write_json(
         self,
@@ -58,16 +63,32 @@ class Llm:
             return None
 
     async def search_json(
-        self, system: str, prompt: str, *, max_searches: int = 4, effort: str = "medium"
+        self,
+        system: str,
+        prompt: str,
+        *,
+        max_searches: int = 3,
+        effort: str = "low",
+        timeout: float = SEARCH_TIMEOUT_S,
     ) -> dict | None:
-        """A JSON object from a turn that may search the web, or None.
+        """A JSON object from a turn that may search the web, or None (also
+        when it takes longer than `timeout` seconds, searches included).
 
         Structured outputs can't be combined with web search (search results
         come back with citations, which structured outputs reject), so the
         prompt asks for JSON and the final text is parsed leniently.
         """
+        self.last_queries = []
         if self._client is None:
             return None
+        try:
+            return await asyncio.wait_for(self._search(system, prompt, max_searches, effort), timeout)
+        except TimeoutError:
+            log.warning("Claude web search took over %gs; skipping", timeout)
+            return None
+
+    async def _search(self, system: str, prompt: str, max_searches: int, effort: str) -> dict | None:
+        assert self._client is not None
         tools = [{**WEB_SEARCH, "max_uses": max_searches}]
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         try:
@@ -75,13 +96,18 @@ class Llm:
                 response = await self._client.beta.messages.create(
                     model=MODEL,
                     max_tokens=16000,
-                    # Medium: at low it often skips searching and stays generic.
+                    # Low fits the 30s limit (medium often runs past it); the
+                    # prompt asks for searches first, so ideas stay specific.
                     output_config={"effort": effort},
                     system=system,
                     tools=tools,
                     messages=messages,
                     **FALLBACK,
                 )
+                for b in response.content:
+                    query = str(b.input.get("query", "")).strip() if b.type == "server_tool_use" and isinstance(getattr(b, "input", None), dict) else ""
+                    if query and query not in self.last_queries:
+                        self.last_queries.append(query)
                 if response.stop_reason != "pause_turn":
                     break
                 # Resend the paused turn as is; the server picks up where it stopped.

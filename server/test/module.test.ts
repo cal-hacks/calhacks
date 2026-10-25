@@ -48,9 +48,10 @@ describe('seed', () => {
     expect(rows('friendship').filter(f => f.status === 'accepted')).toHaveLength(10);
     expect(rows('friendship').filter(f => f.status === 'pending')).toMatchObject([{ toId: friendId('Riley') }]);
     expect(rows('consent')).toHaveLength(30);
-    // Last week's plan, already confirmed.
-    expect(rows('plan')).toMatchObject([{ status: 'confirmed' }]);
-    expect(rows('feedItem').length).toBeGreaterThan(5);
+    // Only the scene is set: no plans or agent posts until the demo runs.
+    expect(rows('plan')).toHaveLength(0);
+    expect(rows('feedItem').filter(f => f.createdBy === 'agent')).toHaveLength(0);
+    expect(rows('feedItem').length).toBeGreaterThan(3);
     expect(rows('freeBlock').length).toBeGreaterThan(5);
     // No Health: only Screen Time and Canvas.
     expect(rows('stat')).toHaveLength(4);
@@ -383,5 +384,48 @@ describe('cast greetings', () => {
     const rileyFeed = mod.myFeed(h.viewContext(riley) as any, {} as any) as any[];
     expect(rileyFeed.some(f => f.friendId === alexId && /climbing/.test(f.text))).toBe(true);
     void ninaId;
+  });
+});
+
+describe('the demo cast', () => {
+  const unclaimed = (name: string) => rows('friend').find(f => f.name.startsWith(name)).id as bigint;
+  const chatOf = (a: bigint, b: bigint) => {
+    const inChat = (g: bigint, f: bigint) => rows('membership').some(m => m.groupId === g && m.friendId === f);
+    return rows('friendGroup').find(g => g.isDirect && inChat(g.id, a) && inChat(g.id, b)).id as bigint;
+  };
+
+  test('the agent can speak and react only as unclaimed cast members', () => {
+    const alex = unclaimed('Alex');
+    run(riley, ctx => mod.acceptFriendRequest(ctx, { fromId: alex }));
+    const dm = chatOf(alex, fid('Riley'));
+    run(agent, ctx => mod.castSendMessage(ctx, { friendId: alex, groupId: dm, text: 'climbing this weekend?', replyToId: 0n }));
+    const msg = rows('feedItem').at(-1);
+    expect(msg).toMatchObject({ friendId: alex, kind: 'message', createdBy: 'friend', text: 'climbing this weekend?' });
+    run(agent, ctx => mod.castReact(ctx, { friendId: alex, feedItemId: msg.id, emoji: '🧗' }));
+    run(agent, ctx => mod.castReact(ctx, { friendId: alex, feedItemId: msg.id, emoji: '🧗' })); // once only
+    expect(rows('reaction').filter(r => r.feedItemId === msg.id)).toHaveLength(1);
+    // Riley signed in: the agent can't put words in her mouth.
+    expect(() => run(agent, ctx => mod.castSendMessage(ctx, { friendId: fid('Riley'), groupId: dm, text: 'hi', replyToId: 0n }))).toThrow(/unclaimed/);
+    // Nor can a friend's browser use these.
+    expect(() => run(maya, ctx => mod.castSendMessage(ctx, { friendId: alex, groupId: dm, text: 'hi', replyToId: 0n }))).toThrow(/only the agent/);
+    // And Alex isn't in the group.
+    expect(() => run(agent, ctx => mod.castSendMessage(ctx, { friendId: alex, groupId: groupId(), text: 'hi', replyToId: 0n }))).toThrow(/not in this chat/);
+  });
+
+  test('agent events are agent-only and capped', () => {
+    const log = (who: TestAuth, text: string) =>
+      run(who, ctx => mod.logAgentEvent(ctx, { kind: 'request', actorFriendId: 0n, targetFriendId: fid('Maya'), groupId: groupId(), text, detail: '' }));
+    log(agent, 'Coordinator asked Maya’s agent for her week');
+    expect(rows('agentEvent')).toMatchObject([{ kind: 'request', text: 'Coordinator asked Maya’s agent for her week' }]);
+    expect(() => log(maya, 'spoof')).toThrow(/only the agent/);
+    expect(() => run(agent, ctx => mod.logAgentEvent(ctx, { kind: 'gossip', actorFriendId: 0n, targetFriendId: 0n, groupId: 0n, text: 'x', detail: '' }))).toThrow(/kind/);
+    for (let i = 0; i < 305; i++) log(agent, `event ${i}`);
+    expect(rows('agentEvent')).toHaveLength(300);
+    expect(rows('agentEvent').some(e => e.text === 'event 304')).toBe(true);
+  });
+
+  test('the coordinator can announce a locked-in plan', () => {
+    run(agent, ctx => mod.postFeedItem(ctx, { groupId: groupId(), friendId: 0n, kind: 'plan_locked', text: 'Locked in 🎉', replyToId: 0n, localDate: '' }));
+    expect(rows('feedItem').at(-1)).toMatchObject({ kind: 'plan_locked', createdBy: 'agent' });
   });
 });

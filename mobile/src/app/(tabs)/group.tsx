@@ -29,6 +29,7 @@ const KIND_LABEL: Record<string, { label: string; icon: string }> = {
   obscure_place: { label: "Weirdest place", icon: "🗺️" },
   roast: { label: "Roast (opted in)", icon: "🔥" },
   plan_proposal: { label: "Plan", icon: "📅" },
+  plan_locked: { label: "Plan locked in", icon: "🎉" },
 };
 
 function timeLabel(item: { createdAt: { toDate(): Date } }) {
@@ -298,7 +299,7 @@ function ChatItem({ item, live, friendById }: { item: FeedItem; live: LiveState;
       <View style={{ backgroundColor: c.accentSoft, borderColor: c.border, borderWidth: 1, borderRadius: radius.md, padding: 12, gap: 6 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Text>{kind.icon}</Text>
-          <Txt bold>{item.kind === "plan_proposal" ? "Coordinator" : `${author?.name.split(" ")[0] ?? "Friend"}'s agent`}</Txt>
+          <Txt bold>{item.friendId === 0n ? "Coordinator" : `${author?.name.split(" ")[0] ?? "Friend"}'s agent`}</Txt>
           <Txt small muted>· {kind.label} · {timeLabel(item)}</Txt>
         </View>
         <Txt>{item.text}</Txt>

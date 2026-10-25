@@ -29,6 +29,7 @@ const KIND_LABEL: Record<string, string> = {
   obscure_place: "Weirdest place",
   roast: "Roast (opted in)",
   plan_proposal: "Plan",
+  plan_locked: "Plan locked in",
 };
 
 function timeLabel(item: { createdAt: { toDate(): Date } }) {
@@ -307,7 +308,7 @@ function ChatItem({ item, live, friendById }: { item: FeedItem; live: LiveState;
       <article className="agent-post">
         <div className="agent-head">
           <BeeLogo size={22} />
-          <strong>{item.kind === "plan_proposal" ? "Coordinator" : `${author?.name.split(" ")[0] ?? "Friend"}'s agent`}</strong>
+          <strong>{item.friendId === 0n ? "Coordinator" : `${author?.name.split(" ")[0] ?? "Friend"}'s agent`}</strong>
           <span className="pill pill-on">{kind}</span>
           <span className="small muted">{timeLabel(item)}</span>
         </div>
