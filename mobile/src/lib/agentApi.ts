@@ -1,5 +1,7 @@
 import * as Calendar from "expo-calendar";
 import * as ImagePicker from "expo-image-picker";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { devHost } from "./devHost";
 import { forgetIngestToken, ingestToken } from "./live";
@@ -78,6 +80,23 @@ export async function syncBusyTimes(): Promise<"synced" | "skipped" | null> {
   if (!busy) return null;
   const r = await agentPost<{ status: "synced" | "skipped" }>("/calendar/device/busy", { busy });
   return r.status;
+}
+
+/**
+ * Connect Google Calendar through the agent service's sign-in, which keeps a
+ * refresh token so sync never expires. Opens Google in a secure in-app
+ * browser and comes back to the app. Returns the account, or null if cancelled.
+ */
+export async function connectGoogleCalendar(): Promise<string | null> {
+  const returnTo = Linking.createURL("share");
+  const { url } = await agentPost<{ url: string }>("/oauth/google/start", { return_to: returnTo });
+  const result = await WebBrowser.openAuthSessionAsync(url, returnTo);
+  if (result.type !== "success") return null;
+  const params = Linking.parse(result.url).queryParams ?? {};
+  if (params.connected !== "google") {
+    throw new AgentError(params.calendar === "cancelled" ? "Google sign-in was cancelled." : "Google didn't connect. Try again.", 0);
+  }
+  return typeof params.account === "string" ? params.account : "Google account";
 }
 
 // ---------- photos and screenshots ----------

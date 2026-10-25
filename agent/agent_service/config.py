@@ -21,6 +21,10 @@ class Settings:
     agentverse_api_key: str
     fetch_port: int
     google_token_file: Path
+    google_client_id: str
+    google_client_secret: str
+    # This service's public base URL (https on Render); Google redirects here.
+    public_url: str
 
 
 def load_settings() -> Settings:
@@ -43,6 +47,9 @@ def load_settings() -> Settings:
         fetch_agent_seed=os.environ.get("FETCH_AGENT_SEED", ""),
         agentverse_api_key=os.environ.get("AGENTVERSE_API_KEY", ""),
         fetch_port=int(os.environ.get("FETCH_PORT", "8001")),
+        google_client_id=os.environ.get("GOOGLE_CLIENT_ID", ""),
+        google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+        public_url=os.environ.get("AGENT_PUBLIC_URL", "").rstrip("/"),
         google_token_file=Path(
             os.environ.get("GOOGLE_TOKEN_FILE") or REPO_ROOT / "agent" / ".google_tokens.json"
         ),

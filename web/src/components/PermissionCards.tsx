@@ -23,6 +23,7 @@ export function PermissionCards() {
       setCalendar(provider, true, params.get("account") ?? undefined);
       params.delete("connected");
       params.delete("account");
+      params.delete("calendar");
       setParams(params, { replace: true });
     }
   }, [params, setParams]);
@@ -32,6 +33,8 @@ export function PermissionCards() {
     try {
       const r = await connectCalendar(provider, me.id, me.email);
       if (r.status === "connected") setCalendar(provider, true, r.account);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
